@@ -1,4 +1,4 @@
-# myoa_bacn 企业 OA 系统后台开发日志
+# myoa_back 企业 OA 系统后台开发日志
 
 - 后端基于 Django Rest Framewordk
 
@@ -364,7 +364,9 @@ department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_N
   4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
 
 ### 用户数据初始化,并指定部门
+
 - 自定义命令`~/apps/oaauth/management/commands/initusers.py`
+
 ```py
 from django.core.management.base import BaseCommand
 from apps.oaauth.models import OAUser, OADepartment
@@ -432,4 +434,215 @@ class Command(BaseCommand):
 
         self.stdout.write('初始用户创建成功!')
 ```
+
 - 执行命令`python manage.py initusers`
+
+# 后台登录实现
+
+> 要求前端 POST 请求该 API, 请求体带上正确的邮箱密码后, 返回 JWT_TOKEN 以及用户信息
+
+### jwt 包的安装和生成 jwt_token 的实现
+
+- 安装:`pip install PyJWT`
+- 新建`~/apps/oaauth/authentications.py`
+
+```python
+import jwt
+import time
+from django.conf import settings
+from rest_framework.authentication import BaseAuthentication, get_authorization_header
+from rest_framework import exceptions
+from jwt.exceptions import ExpiredSignatureError
+from .models import OAUser
+
+
+def generate_jwt(user):
+    """
+    生成jwt_token
+    """
+    expire_time = time.time() + 60 * 60 * 24 * 7
+    return jwt.encode({"userid": user.pk, "exp": expire_time}, key=settings.SECRET_KEY)
+
+
+class UserTokenAuthentication(BaseAuthentication):
+    def authenticate(self, request):
+        # 这里的request：是rest_framework.request.Request对象
+        return request._request.user, request._request.auth
+
+
+class JWTAuthentication(BaseAuthentication):
+    keyword = 'JWT'
+
+    def authenticate(self, request):
+        auth = get_authorization_header(request).split()
+
+        if not auth or auth[0].lower() != self.keyword.lower().encode():
+            return None
+
+        if len(auth) == 1:
+            msg = "不可用的JWT请求头!"
+            raise exceptions.AuthenticationFailed(msg)
+        elif len(auth) > 2:
+            msg = '不可用的JWT请求头!JWT Token中间不应该有空格!'
+            raise exceptions.AuthenticationFailed(msg)
+
+        try:
+            jwt_token = auth[1]
+            jwt_info = jwt.decode(jwt_token, settings.SECRET_KEY, algorithms='HS256')
+            userid = jwt_info.get('userid')
+            try:
+                # 绑定当前user到request对象上
+                user = OAUser.objects.get(pk=userid)
+                setattr(request,'user', user)
+                return user, jwt_token
+            except:
+                msg = '用户不存在!'
+                raise exceptions.AuthenticationFailed(msg)
+        except ExpiredSignatureError:
+            msg = "JWT Token已过期!"
+            raise exceptions.AuthenticationFailed(msg)
+```
+
+> 该代码反复使用,可以保存以备复制粘贴
+
+### 序列化的实现
+
+> 需要序列化的有:登录序列化(jwt_token), 用户序列化(user), 以及在 user,即严重通过且登录成功的用户信息中,还带有其部门的相关信息.
+
+- 新建`~/apps/oaauth/serializers.py`
+
+```python
+from rest_framework import serializers
+from .models import OAUser, UserStatusChoices, OADepartment
+class LoginSerializer(serializers.Serializer):
+    """
+    登录序列化
+    """
+    email = serializers.EmailField(required=True) # 邮箱:必填
+    password = serializers.CharField(max_length=32,min_length=6) # 密码
+
+    # 校验邮箱和密码
+    def validate(self, attrs):
+        # 提取attrs中的邮箱和密码
+        email = attrs.get('email')
+        password = attrs.get('password')
+
+        # 如果其存在
+        if email and password:
+            # 通过邮箱提取用户信息
+            user = OAUser.objects.filter(email=email).first()
+            # 如果取不到
+            if not user:
+                raise serializers.ValidationError('请输入正确的邮箱!')
+            # 如果取出后校验密码不正确
+            if not user.check_password(password):
+                raise serializers.ValidationError('请输入正确的密码!')
+            # 如果用户未激活
+            if user.status == UserStatusChoices.UNACTIVED:
+                raise serializers.ValidationError('用户尚未激活,请联系管理员!')
+            # 如果用户被锁定
+            if user.status == UserStatusChoices.LOCKED:
+                raise serializers.ValidationError('用户已被锁定,请联系管理员!')
+
+            # 为了减少再次执行SQL语句, 直接把user放进attrs的参数中,就以user为下标
+            attrs['user'] = user
+
+        # 如果请求体中邮箱和密码不存在
+        else:
+            raise serializers.ValidationError('请务必输入邮箱和密码!')
+
+        return attrs
+
+class DepartmentSerializer(serializers.ModelSerializer):
+    """
+    部门模型序列化
+    """
+    class Meta:
+        model = OADepartment
+        fields = "__all__"
+
+class UserSerializer(serializers.ModelSerializer):
+    """
+    用户模型序列化
+    """
+    department = DepartmentSerializer() # 通过序列化嵌套, 获取详细的部门信息, 而不再单是一个外键:部门id
+    class Meta:
+        model = OAUser
+        exclude = ['password', 'groups', 'user_permissions']
+```
+
+> 注意登录序列化, 返回的并不是模型的数据, 所以只用继承`Serializer`
+
+### 视图层实现, 以及配置路由
+
+- 视图`~/apps/oaauth/views.py`
+
+```python
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from .serializers import LoginSerializer, UserSerializer
+from datetime import datetime
+from .authentications import generate_jwt
+from rest_framework import status
+
+
+class LoginView(APIView):
+    """
+    登录视图
+    """
+
+    def post(self, request):
+        """
+        登录方法
+        """
+        # 验证数据是否可用
+        serializer = LoginSerializer(data=request.data)
+        if serializer.is_valid():
+            user = serializer.validated_data.get('user')
+            # 更新最近登录时间
+            user.last_login = datetime.now()
+            user.save()
+            # 生成jwt_token
+            token = generate_jwt(user)
+            # 返回token和用户信息给前端
+            return Response({'token': token, 'user': UserSerializer(user).data})
+        else:
+            # print(serializer.errors)
+            return Response({'message': '参数验证失败'}, status=status.HTTP_400_BAD_REQUEST)
+```
+
+> 这里登录不存在增删改查, 不需要用 ViewSet 视图集, 直接继承 APIView 即可
+
+- app 路由 `~/apps/oaauth/urls.py`
+
+```python
+from django.urls import path
+from . import views
+
+app_name = 'oaauth'
+
+urlpatterns = [
+    path('login', views.LoginView.as_view(), name='login')
+]
+
+```
+
+- 主路由 `~/myoa_back/urls.py`
+
+```python
+from django.contrib import admin
+from django.urls import path,include
+
+urlpatterns = [
+    path('admin/', admin.site.urls),
+    path('auth/', include('apps.oaauth.urls'))
+]
+```
+
+### 使用 postman 测试是否可用
+
+- 打开 postman, 新建集合`myoa_back`, 再集合下新建请求`login`
+  - 请求方式: `post`
+  - 请求地址: `http://localhost:8000/auth/login`
+  - 请求体,`x-www-form-urlencoded`, 填写预先设置好的邮箱和密码
+- 请求后返回一个带`jwt_token`和`user`的 json, 成功

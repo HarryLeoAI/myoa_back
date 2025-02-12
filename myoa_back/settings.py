@@ -39,14 +39,18 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # DRF
     'rest_framework',
+    # corsheaders
     'corsheaders',
+    # 项目app
+    'apps.oaauth' # 用户
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    # 应该放在 CommonMiddleware 前
+    # corsheaders 务必放在 CommonMiddleware 前
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',
@@ -164,3 +168,6 @@ CORS_ALLOW_HEADERS = [
 # 如果需要携带 Cookie 或认证信息
 CORS_ALLOW_CREDENTIALS = True
 '''
+
+# 覆盖django自带的user模型
+AUTH_USER_MODEL = 'oaauth.OAUser'

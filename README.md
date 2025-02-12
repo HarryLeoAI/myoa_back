@@ -97,14 +97,20 @@ DB_PORT = 数据库端口,默认3306
   - `git remote add origin https://github.com/HarryLeoAI/myoa_back.git` 添加远程仓库地址
   - `git push --set-upstream origin master` 推送更新到远程仓库仓库, 设置主分支
 
-
 # 跨域请求配置
+
 ### django-cors-headers
+
 - `django-cors-headers` 是一个用于处理跨源资源共享（CORS，Cross-Origin Resource Sharing）请求的 Django 中间件库。CORS 是一种机制，允许通过浏览器从一个域访问另一个域的资源。在开发 Web 应用时，尤其是前后端分离的架构中，通常会遇到跨域请求的问题，django-cors-headers 可以帮助解决这个问题。
+
 ### 安装
+
 - `pip install django-cors-headers`
+
 ### 配置
+
 - `settings.py`
+
 ```py
 # ...加载app
 INSTALLED_APPS = [
@@ -117,7 +123,7 @@ INSTALLED_APPS = [
 # ...加载中间件, 注意应该放在
 MIDDLEWARE = [
     # ...
-    # 应该放在 CommonMiddleware 前
+    # corsheaders 务必放在 CommonMiddleware 前
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     # ...
@@ -154,3 +160,133 @@ CORS_ALLOW_HEADERS = [
 CORS_ALLOW_CREDENTIALS = True
 '''
 ```
+
+# 重写 User 模型
+
+### 溯源 User 父类
+
+- 在 pycharm 强大的索引功能中,我们只需要通过[ctrl+鼠标左键]点击类名称,即可溯源到类的源代码
+- django 自带的 User 模型位于`from django.contrib.auth.models import User`
+
+### 重写 User 类
+
+> 不能够直接新建一个 User, 因为以此建立的全新的 User 模型将失去 django 自带的一系列功能,包括权限认证等
+
+- 我们应该借面向对象编程思想中的多态思想, 重写已经存在的 User 类, 使其成为我们需要的样子同时, 继承了 django 原本内置的功能
+- 新建 app, oaauth : `python manage.py startapp oaauth`,
+- 为了方便管理, 我们修改项目目录结构, 把所有 app 放在`~/apps/`中, pycharm 新建 python 包`apps/`并且将新建的`oaauth/`放进 apps 中
+- 在`settings.py`中安装 oaauth
+
+```py
+INSTALLED_APPS = [
+    # ...
+    # DRF
+    'rest_framework',
+    # corsheaders
+    'corsheaders',
+    # 项目app
+    'apps.oaauth' # 用户
+]
+```
+
+- 重写 User, 在`~/apps/oaauth/models.py`
+
+```py
+from django.db import models
+from django.contrib.auth.models import User, AbstractBaseUser, PermissionsMixin, BaseUserManager
+from django.contrib.auth.hashers import make_password
+
+
+class UserStatusChoices(models.IntegerChoices):
+    """
+    用户状态
+    1已激活
+    2未激活
+    3已锁定
+    """
+    ACTIVED = 1
+    UNACTIVED = 2
+    LOCKED = 3
+
+
+class OAUserManager(BaseUserManager):
+    """
+    重写的 UserManager
+    """
+    use_in_migrations = True
+
+    def _create_user(self, realname, email, password, **extra_fields):
+        """
+        创建用户
+        """
+        if not realname:
+            raise ValueError("必须设置真实姓名!")
+        email = self.normalize_email(email)
+        user = self.model(realname=realname, email=email, **extra_fields)
+        user.password = make_password(password)
+        user.save(using=self._db)
+        return user
+
+    # 普通用户
+    def create_user(self, realname, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", False)
+        return self._create_user(realname, email, password, **extra_fields)
+
+    # 超级用户
+    def create_superuser(self, realname, email=None, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("status", UserStatusChoices.ACTIVED)
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("超级用户必须设置is_staff = True")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("超级用户必须设置is_superuser = True")
+
+        return self._create_user(realname, email, password, **extra_fields)
+
+
+class OAUser(AbstractBaseUser, PermissionsMixin):
+    """
+    重写的 User
+    """
+
+    # 配置字段
+    realname = models.CharField(max_length=8, unique=False)  # 真名
+    email = models.EmailField(unique=True, blank=False)  # 邮箱
+    telphone = models.CharField(max_length=20, blank=True)  # 电话
+    is_staff = models.BooleanField(default=True)  # django自带, 是否是员工, 默认为是
+    is_active = models.BooleanField(default=True)  # django自带, 是否激活, 默认为是
+    status = models.IntegerField(choices=UserStatusChoices, default=UserStatusChoices.UNACTIVED)  # 用户状态,默认为未激活
+    date_joined = models.DateTimeField(auto_now_add=True)  # 新增时自动添加当前时间
+
+    objects = OAUserManager()
+
+    EMAIL_FIELD = "email"
+    # USERNAME_FIELD 是用来做鉴权的, 作为 authenticate() 中的username参数
+    USERNAME_FIELD = "email"  # 重写的User模型中, 我们用邮箱作为登录账号
+    # REQUIRED_FIELDS 指定哪些字段是必须要传入的, 但是不能重复包含EMAIL_FIELD和USERNAME_FIELD已经设置过的值
+    REQUIRED_FIELDS = ['realname', 'password']
+
+    def clean(self):
+        super().clean()
+        self.email = self.__class__.objects.normalize_email(self.email)
+
+    def get_full_name(self):
+        return self.realname
+
+    def get_short_name(self):
+        return self.realname
+```
+
+- 再在`settings.py`中声明, 本项目使用的是自定义的 User 类, OAUser
+
+```py
+# ...
+# 覆盖django自带的user模型
+AUTH_USER_MODEL = 'oaauth.OAUser'
+```
+
+- 创建迁移脚本, 执行迁移命令 `python manage.py makemigrations` & `... migrate`
+- 测试,创建超级用户`python mange.py createsuperuser`, 输入相应信息..., ok!

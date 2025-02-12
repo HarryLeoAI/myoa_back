@@ -290,3 +290,146 @@ AUTH_USER_MODEL = 'oaauth.OAUser'
 
 - 创建迁移脚本, 执行迁移命令 `python manage.py makemigrations` & `... migrate`
 - 测试,创建超级用户`python mange.py createsuperuser`, 输入相应信息..., ok!
+
+### shortuuid 替代主键
+
+- 安装: `pip install shortuuid` ? 不方便
+- 使用 django 专属的 `pip install django-shortuuidfield`, 安装时自动安装上面的依赖
+- 编辑`~/apps/oaauth/models.py`
+
+```py
+# ...
+# 导入 ShortUUid
+from shortuuidfield import ShortUUIDField
+
+# 修改User模型的主键
+class OAUser(AbstractBaseUser, PermissionsMixin):
+    # ...
+     # 配置字段
+    uid = ShortUUIDField(primary_key=True) # 主键:uid
+    # ...
+```
+
+- 重建数据库, 删除 `0001_initial.py`后再次执行迁移
+
+# 部门相关
+
+> 项目逻辑: OA 系统中最高权力中心为董事会, 其次有各业务部门, 各业务部门中有一个 leader(直接领导), 一个 manager(董事会经理), 一个 leader 只领导一个部门, 一个董事会经理则管理多个部门.
+
+### 模型实现
+
+- `~/apps/oaauth/models.py`
+
+```py
+class OADepartment(models.Model):
+    """
+    部门表
+    """
+    name = models.CharField(max_length=64) # 部门名称
+    intro = models.CharField(max_length=256) # 部门简介
+    leader = models.OneToOneField(OAUser, on_delete=models.SET_NULL, null=True, related_name='leader_department', related_query_name='leader_department') # 领导1:1部门, 一个直接领导人只直接领导一个部门
+    manager = models.ForeignKey(OAUser, on_delete=models.SET_NULL, null=True, related_name='manager_departments', related_query_name='manager_departments') # 经理1:n部门, 一个董事会经理可以管理多个部门
+
+# User 模型中再添加外键
+# ...
+department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_NULL, related_name='department_staffs', related_query_name='department_staffs') # 员工n:1部门, 一个员工只隶属于一个部门
+# ...
+```
+
+- 更新迁移文件,执行迁移,略
+
+### 部门数据初始化
+
+- 想要通过自定义命令`python manage.py [自定义命令]`创建部门初始化数据,需要以下步骤
+  1. 在相关 app 下新建 python 包`app/management`, 再在这个包下面新建`app/management/commands`
+  2. 新建任意名称的 python 文件, **注意:**该名称就对应`python manage.py [python文件名称]`, 这里起名叫做`initdepartments.py`
+  ```py
+  from django.core.management.base import BaseCommand # 导命令包
+  from apps.oaauth.models import OADepartment # 导模型
+  # 类名称不可变,必须叫Command,必须继承BaseCommand
+  class Command(BaseCommand):
+      # 函数名称不可变,必须叫handle
+      def handle(self, *args, **options):
+          # 初始化部门数据
+          boarder = OADepartment.objects.create(name='董事会', intro='董事会')
+          developer = OADepartment.objects.create(name='研发部', intro='产品设计,技术开发')
+          operator = OADepartment.objects.create(name='运营部', intro='产品和客户运营')
+          salar = OADepartment.objects.create(name='销售部', intro='产品销售')
+          human_resource = OADepartment.objects.create(name='人事部', intro='员工的招聘,培训,考核')
+          finance = OADepartment.objects.create(name='财务部', intro='财会业务')
+          # self.stdout.write('命令执行完毕后的提示信息')
+          self.stdout.write('部门数据初始化成功!')
+  ```
+  3. `settings.py`中确保该 app 已安装
+  4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
+
+### 用户数据初始化,并指定部门
+- 自定义命令`~/apps/oaauth/management/commands/initusers.py`
+```py
+from django.core.management.base import BaseCommand
+from apps.oaauth.models import OAUser, OADepartment
+
+
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        # 获取部门
+        boarder = OADepartment.objects.get(name='董事会')
+        developer = OADepartment.objects.get(name='研发部')
+        operator = OADepartment.objects.get(name='运营部')
+        salar = OADepartment.objects.get(name='销售部')
+        human_resource = OADepartment.objects.get(name='人事部')
+        finance = OADepartment.objects.get(name='财务部')
+
+        # 董事会成员, 都是superuser
+        chairman = OAUser.objects.create_superuser(email='harry.leo.ai@gmail.com', realname='刘浩宇', password='111111',
+                                                   department=boarder)  # 董事会主席
+        vice_chairman = OAUser.objects.create_superuser(email='harry_leo_ai@qq.com', realname='刘浩', password='111111',
+                                                        department=boarder)  # 副主席
+
+        # 各部门leader, 都是普通用户
+        # 研发部
+        zhang_san = OAUser.objects.create_user(email='zhangsan@qq.com', realname='张三', password='111111',
+                                               department=developer)
+        # 运营部
+        li_si = OAUser.objects.create_user(email='lisi@qq.com', realname='李四', password='111111', department=operator)
+        # 销售部
+        wang_wu = OAUser.objects.create_user(email='wangwu@qq.com', realname='王五', password='111111',
+                                             department=salar)
+        # 人事部
+        zhao_liu = OAUser.objects.create_user(email='zhaoliu@qq.com', realname='赵六', password='111111',
+                                              department=human_resource)
+        # 财务部
+        sun_qi = OAUser.objects.create_user(email='sunqi@qq.com', realname='孙七', password='111111',
+                                            department=finance)
+
+        # 指定部门的 leader 和 manager
+        boarder.leader = chairman
+        boarder.manager = None
+
+        # 董事长刘浩宇管理 研发, 运营, 销售部
+        developer.leader = zhang_san
+        developer.manager = chairman
+
+        operator.leader = li_si
+        operator.manager = chairman
+
+        salar.leader = wang_wu
+        salar.manager = chairman
+
+        # 副董事长刘浩管理 人事部 和 财务部
+        human_resource.leader = zhao_liu
+        human_resource.manager = vice_chairman
+
+        finance.leader = sun_qi
+        finance.manager = vice_chairman
+
+        boarder.save()
+        developer.save()
+        operator.save()
+        salar.save()
+        human_resource.save()
+        finance.save()
+
+        self.stdout.write('初始用户创建成功!')
+```
+- 执行命令`python manage.py initusers`

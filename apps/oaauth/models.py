@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User, AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.contrib.auth.hashers import make_password
+from shortuuidfield import ShortUUIDField
 
 
 class UserStatusChoices(models.IntegerChoices):
@@ -59,6 +60,7 @@ class OAUser(AbstractBaseUser, PermissionsMixin):
     """
 
     # 配置字段
+    uid = ShortUUIDField(primary_key=True) # 主键:uid
     realname = models.CharField(max_length=8, unique=False)  # 真名
     email = models.EmailField(unique=True, blank=False)  # 邮箱
     telphone = models.CharField(max_length=20, blank=True)  # 电话
@@ -66,6 +68,8 @@ class OAUser(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)  # django自带, 是否激活, 默认为是
     status = models.IntegerField(choices=UserStatusChoices, default=UserStatusChoices.UNACTIVED)  # 用户状态,默认为未激活
     date_joined = models.DateTimeField(auto_now_add=True)  # 新增时自动添加当前时间
+
+    department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_NULL, related_name='department_staffs', related_query_name='department_staffs')
 
     objects = OAUserManager()
 
@@ -84,3 +88,12 @@ class OAUser(AbstractBaseUser, PermissionsMixin):
 
     def get_short_name(self):
         return self.realname
+
+class OADepartment(models.Model):
+    """
+    部门表
+    """
+    name = models.CharField(max_length=64) # 部门名称
+    intro = models.CharField(max_length=256) # 部门简介
+    leader = models.OneToOneField(OAUser, on_delete=models.SET_NULL, null=True, related_name='leader_department', related_query_name='leader_department')
+    manager = models.ForeignKey(OAUser, on_delete=models.SET_NULL, null=True, related_name='manager_departments', related_query_name='manager_departments')

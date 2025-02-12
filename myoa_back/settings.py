@@ -40,11 +40,14 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'corsheaders',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # 应该放在 CommonMiddleware 前
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     # 'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -132,3 +135,32 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# cors配置
+CORS_ALLOW_ALL_ORIGINS = True # 开发阶段暂时允许所有域名跨域请求
+'''
+# 实际投入使用时应该配置:
+CORS_ALLOW_ALL_ORIGINS = False  # 默认情况下，禁用所有跨域请求
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:5173",  # 前端vue默认的的URL
+]
+
+# 允许请求的方法
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'DELETE',
+    'PATCH',
+]
+
+# 允许的请求头
+CORS_ALLOW_HEADERS = [
+    'content-type',
+    'authorization',
+    'x-csrftoken',
+]
+
+# 如果需要携带 Cookie 或认证信息
+CORS_ALLOW_CREDENTIALS = True
+'''

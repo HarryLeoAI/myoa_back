@@ -11,8 +11,8 @@
 ### 创建项目
 
 - 新建 django 项目, 选择虚拟环境, 并且安装好所需的包:
-  - `pip install mysqlclient` => mysql 数据库操作包
-  - `pip install djangorestframework` => drf 包
+    - `pip install mysqlclient` => mysql 数据库操作包
+    - `pip install djangorestframework` => drf 包
 
 ### 配置
 
@@ -21,13 +21,13 @@
 ```python
 # ...
 # 时区配置
-LANGUAGE_CODE = 'zh-hans' # 简体中文
+LANGUAGE_CODE = 'zh-hans'  # 简体中文
 
-TIME_ZONE = 'UTC' # 时区
+TIME_ZONE = 'UTC'  # 时区
 
-USE_I18N = False # 非国际化项目
+USE_I18N = False  # 非国际化项目
 
-USE_TZ = False # 禁用时区
+USE_TZ = False  # 禁用时区
 
 # ...
 # 数据库配置
@@ -56,7 +56,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'rest_framework', # 安装drf
+    'rest_framework',  # 安装drf
 ]
 
 # ...
@@ -91,17 +91,19 @@ DB_PORT = 数据库端口,默认3306
 
 - github 新建仓库`myoa_back`
 - 本地项目根路径下执行以下命令:
-  - `git init` 初始化仓库
-  - `git add .` 添加更改项
-  - `git commit -m "项目初始化"` 初次提交
-  - `git remote add origin https://github.com/HarryLeoAI/myoa_back.git` 添加远程仓库地址
-  - `git push --set-upstream origin master` 推送更新到远程仓库仓库, 设置主分支
+    - `git init` 初始化仓库
+    - `git add .` 添加更改项
+    - `git commit -m "项目初始化"` 初次提交
+    - `git remote add origin https://github.com/HarryLeoAI/myoa_back.git` 添加远程仓库地址
+    - `git push --set-upstream origin master` 推送更新到远程仓库仓库, 设置主分支
 
 # 跨域请求配置
 
 ### django-cors-headers
 
-- `django-cors-headers` 是一个用于处理跨源资源共享（CORS，Cross-Origin Resource Sharing）请求的 Django 中间件库。CORS 是一种机制，允许通过浏览器从一个域访问另一个域的资源。在开发 Web 应用时，尤其是前后端分离的架构中，通常会遇到跨域请求的问题，django-cors-headers 可以帮助解决这个问题。
+- `django-cors-headers` 是一个用于处理跨源资源共享（CORS，Cross-Origin Resource Sharing）请求的 Django 中间件库。CORS
+  是一种机制，允许通过浏览器从一个域访问另一个域的资源。在开发 Web 应用时，尤其是前后端分离的架构中，通常会遇到跨域请求的问题，django-cors-headers
+  可以帮助解决这个问题。
 
 ### 安装
 
@@ -116,9 +118,8 @@ DB_PORT = 数据库端口,默认3306
 INSTALLED_APPS = [
     # ...
     'rest_framework',
-    'corsheaders', # 加载corshearders
+    'corsheaders',  # 加载corshearders
 ]
-
 
 # ...加载中间件, 注意应该放在
 MIDDLEWARE = [
@@ -129,10 +130,9 @@ MIDDLEWARE = [
     # ...
 ]
 
-
 # ...简单配置
 # cors配置
-CORS_ALLOW_ALL_ORIGINS = True # 开发阶段暂时允许所有域名跨域请求
+CORS_ALLOW_ALL_ORIGINS = True  # 开发阶段暂时允许所有域名跨域请求
 '''
 # 实际投入使用时应该配置:
 CORS_ALLOW_ALL_ORIGINS = False  # 默认情况下，禁用所有跨域请求
@@ -174,7 +174,8 @@ CORS_ALLOW_CREDENTIALS = True
 
 - 我们应该借面向对象编程思想中的多态思想, 重写已经存在的 User 类, 使其成为我们需要的样子同时, 继承了 django 原本内置的功能
 - 新建 app, oaauth : `python manage.py startapp oaauth`,
-- 为了方便管理, 我们修改项目目录结构, 把所有 app 放在`~/apps/`中, pycharm 新建 python 包`apps/`并且将新建的`oaauth/`放进 apps 中
+- 为了方便管理, 我们修改项目目录结构, 把所有 app 放在`~/apps/`中, pycharm 新建 python 包`apps/`并且将新建的`oaauth/`放进
+  apps 中
 - 在`settings.py`中安装 oaauth
 
 ```py
@@ -185,7 +186,7 @@ INSTALLED_APPS = [
     # corsheaders
     'corsheaders',
     # 项目app
-    'apps.oaauth' # 用户
+    'apps.oaauth'  # 用户
 ]
 ```
 
@@ -302,11 +303,12 @@ AUTH_USER_MODEL = 'oaauth.OAUser'
 # 导入 ShortUUid
 from shortuuidfield import ShortUUIDField
 
+
 # 修改User模型的主键
 class OAUser(AbstractBaseUser, PermissionsMixin):
     # ...
-     # 配置字段
-    uid = ShortUUIDField(primary_key=True) # 主键:uid
+    # 配置字段
+    uid = ShortUUIDField(primary_key=True)  # 主键:uid
     # ...
 ```
 
@@ -314,7 +316,8 @@ class OAUser(AbstractBaseUser, PermissionsMixin):
 
 # 部门相关
 
-> 项目逻辑: OA 系统中最高权力中心为董事会, 其次有各业务部门, 各业务部门中有一个 leader(直接领导), 一个 manager(董事会经理), 一个 leader 只领导一个部门, 一个董事会经理则管理多个部门.
+> 项目逻辑: OA 系统中最高权力中心为董事会, 其次有各业务部门, 各业务部门中有一个 leader(直接领导), 一个 manager(
+> 董事会经理), 一个 leader 只领导一个部门, 一个董事会经理则管理多个部门.
 
 ### 模型实现
 
@@ -325,14 +328,18 @@ class OADepartment(models.Model):
     """
     部门表
     """
-    name = models.CharField(max_length=64) # 部门名称
-    intro = models.CharField(max_length=256) # 部门简介
-    leader = models.OneToOneField(OAUser, on_delete=models.SET_NULL, null=True, related_name='leader_department', related_query_name='leader_department') # 领导1:1部门, 一个直接领导人只直接领导一个部门
-    manager = models.ForeignKey(OAUser, on_delete=models.SET_NULL, null=True, related_name='manager_departments', related_query_name='manager_departments') # 经理1:n部门, 一个董事会经理可以管理多个部门
+    name = models.CharField(max_length=64)  # 部门名称
+    intro = models.CharField(max_length=256)  # 部门简介
+    leader = models.OneToOneField(OAUser, on_delete=models.SET_NULL, null=True, related_name='leader_department',
+                                  related_query_name='leader_department')  # 领导1:1部门, 一个直接领导人只直接领导一个部门
+    manager = models.ForeignKey(OAUser, on_delete=models.SET_NULL, null=True, related_name='manager_departments',
+                                related_query_name='manager_departments')  # 经理1:n部门, 一个董事会经理可以管理多个部门
+
 
 # User 模型中再添加外键
 # ...
-department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_NULL, related_name='department_staffs', related_query_name='department_staffs') # 员工n:1部门, 一个员工只隶属于一个部门
+department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_NULL, related_name='department_staffs',
+                               related_query_name='department_staffs')  # 员工n:1部门, 一个员工只隶属于一个部门
 # ...
 ```
 
@@ -341,8 +348,9 @@ department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_N
 ### 部门数据初始化
 
 - 想要通过自定义命令`python manage.py [自定义命令]`创建部门初始化数据,需要以下步骤
-  1. 在相关 app 下新建 python 包`app/management`, 再在这个包下面新建`app/management/commands`
-  2. 新建任意名称的 python 文件, **注意:**该名称就对应`python manage.py [python文件名称]`, 这里起名叫做`initdepartments.py`
+    1. 在相关 app 下新建 python 包`app/management`, 再在这个包下面新建`app/management/commands`
+    2. 新建任意名称的 python 文件, **注意:**该名称就对应`python manage.py [python文件名称]`,
+       这里起名叫做`initdepartments.py`
   ```py
   from django.core.management.base import BaseCommand # 导命令包
   from apps.oaauth.models import OADepartment # 导模型
@@ -360,8 +368,8 @@ department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_N
           # self.stdout.write('命令执行完毕后的提示信息')
           self.stdout.write('部门数据初始化成功!')
   ```
-  3. `settings.py`中确保该 app 已安装
-  4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
+    3. `settings.py`中确保该 app 已安装
+    4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
 
 ### 用户数据初始化,并指定部门
 
@@ -493,7 +501,7 @@ class JWTAuthentication(BaseAuthentication):
             try:
                 # 绑定当前user到request对象上
                 user = OAUser.objects.get(pk=userid)
-                setattr(request,'user', user)
+                setattr(request, 'user', user)
                 return user, jwt_token
             except:
                 msg = '用户不存在!'
@@ -514,12 +522,14 @@ class JWTAuthentication(BaseAuthentication):
 ```python
 from rest_framework import serializers
 from .models import OAUser, UserStatusChoices, OADepartment
+
+
 class LoginSerializer(serializers.Serializer):
     """
     登录序列化
     """
-    email = serializers.EmailField(required=True) # 邮箱:必填
-    password = serializers.CharField(max_length=32,min_length=6) # 密码
+    email = serializers.EmailField(required=True)  # 邮箱:必填
+    password = serializers.CharField(max_length=32, min_length=6)  # 密码
 
     # 校验邮箱和密码
     def validate(self, attrs):
@@ -553,19 +563,23 @@ class LoginSerializer(serializers.Serializer):
 
         return attrs
 
+
 class DepartmentSerializer(serializers.ModelSerializer):
     """
     部门模型序列化
     """
+
     class Meta:
         model = OADepartment
         fields = "__all__"
+
 
 class UserSerializer(serializers.ModelSerializer):
     """
     用户模型序列化
     """
-    department = DepartmentSerializer() # 通过序列化嵌套, 获取详细的部门信息, 而不再单是一个外键:部门id
+    department = DepartmentSerializer()  # 通过序列化嵌套, 获取详细的部门信息, 而不再单是一个外键:部门id
+
     class Meta:
         model = OAUser
         exclude = ['password', 'groups', 'user_permissions']
@@ -631,7 +645,7 @@ urlpatterns = [
 
 ```python
 from django.contrib import admin
-from django.urls import path,include
+from django.urls import path, include
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -642,7 +656,19 @@ urlpatterns = [
 ### 使用 postman 测试是否可用
 
 - 打开 postman, 新建集合`myoa_back`, 再集合下新建请求`login`
-  - 请求方式: `post`
-  - 请求地址: `http://localhost:8000/auth/login`
-  - 请求体,`x-www-form-urlencoded`, 填写预先设置好的邮箱和密码
+    - 请求方式: `post`
+    - 请求地址: `http://localhost:8000/auth/login`
+    - 请求体,`x-www-form-urlencoded`, 填写预先设置好的邮箱和密码
 - 请求后返回一个带`jwt_token`和`user`的 json, 成功
+
+### 完善登录错误的提示信息
+
+- `~/apps/oaauth/views.py` 中的 `LoginView.post()` 方法
+
+```python
+# ...
+else:
+    detail = list(serializer.errors.values())[0][0] # 要这样提取serializer.errors: dict.valuse()获取value干掉key, list()变成数组, 取下标
+    # drf 在返回响应, 状态码非200时, 返回的参数名叫detail而非message.
+    return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+```

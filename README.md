@@ -833,7 +833,7 @@ path('restpassword', views.RestPasswordView.as_view(), name='restpassword')
 - 使用`Postman`进行测试
   1. POST 请求接口`/auth/login`, 输入正确的邮箱和密码, 拿到 TOKEN, 复制
   2. GET 请求接口`/auth/restpassword`, 如果不在`Headers`里带上正确的`Authorization`, 那么会提示`请先登录`,要想访问:
-  - key = `Authorization`, value = `复制的TOKEN`
+  - key = `Authorization`, value = `JWT` + `空格` + `复制的TOKEN`
 
 ### 给后台系统"瘦身"
 

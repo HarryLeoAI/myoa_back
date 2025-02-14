@@ -11,8 +11,8 @@
 ### 创建项目
 
 - 新建 django 项目, 选择虚拟环境, 并且安装好所需的包:
-    - `pip install mysqlclient` => mysql 数据库操作包
-    - `pip install djangorestframework` => drf 包
+  - `pip install mysqlclient` => mysql 数据库操作包
+  - `pip install djangorestframework` => drf 包
 
 ### 配置
 
@@ -91,11 +91,11 @@ DB_PORT = 数据库端口,默认3306
 
 - github 新建仓库`myoa_back`
 - 本地项目根路径下执行以下命令:
-    - `git init` 初始化仓库
-    - `git add .` 添加更改项
-    - `git commit -m "项目初始化"` 初次提交
-    - `git remote add origin https://github.com/HarryLeoAI/myoa_back.git` 添加远程仓库地址
-    - `git push --set-upstream origin master` 推送更新到远程仓库仓库, 设置主分支
+  - `git init` 初始化仓库
+  - `git add .` 添加更改项
+  - `git commit -m "项目初始化"` 初次提交
+  - `git remote add origin https://github.com/HarryLeoAI/myoa_back.git` 添加远程仓库地址
+  - `git push --set-upstream origin master` 推送更新到远程仓库仓库, 设置主分支
 
 # 跨域请求配置
 
@@ -348,9 +348,9 @@ department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_N
 ### 部门数据初始化
 
 - 想要通过自定义命令`python manage.py [自定义命令]`创建部门初始化数据,需要以下步骤
-    1. 在相关 app 下新建 python 包`app/management`, 再在这个包下面新建`app/management/commands`
-    2. 新建任意名称的 python 文件, **注意:**该名称就对应`python manage.py [python文件名称]`,
-       这里起名叫做`initdepartments.py`
+  1. 在相关 app 下新建 python 包`app/management`, 再在这个包下面新建`app/management/commands`
+  2. 新建任意名称的 python 文件, **注意:**该名称就对应`python manage.py [python文件名称]`,
+     这里起名叫做`initdepartments.py`
   ```py
   from django.core.management.base import BaseCommand # 导命令包
   from apps.oaauth.models import OADepartment # 导模型
@@ -368,8 +368,8 @@ department = models.ForeignKey('OADepartment', null=True, on_delete=models.SET_N
           # self.stdout.write('命令执行完毕后的提示信息')
           self.stdout.write('部门数据初始化成功!')
   ```
-    3. `settings.py`中确保该 app 已安装
-    4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
+  3. `settings.py`中确保该 app 已安装
+  4. 执行命令`python manage.py initdepartments`, 发现已经创建好了上面的数据
 
 ### 用户数据初始化,并指定部门
 
@@ -656,9 +656,9 @@ urlpatterns = [
 ### 使用 postman 测试是否可用
 
 - 打开 postman, 新建集合`myoa_back`, 再集合下新建请求`login`
-    - 请求方式: `post`
-    - 请求地址: `http://localhost:8000/auth/login`
-    - 请求体,`x-www-form-urlencoded`, 填写预先设置好的邮箱和密码
+  - 请求方式: `post`
+  - 请求地址: `http://localhost:8000/auth/login`
+  - 请求体,`x-www-form-urlencoded`, 填写预先设置好的邮箱和密码
 - 请求后返回一个带`jwt_token`和`user`的 json, 成功
 
 ### 完善登录错误的提示信息
@@ -672,3 +672,223 @@ else:
     # drf 在返回响应, 状态码非200时, 返回的参数名叫detail而非message.
     return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 ```
+
+# 后端登录认证
+
+> 前端此时已经完成了页面的基础架构, 前端登录的实现(登陆页面表单请求`~/apps/oaauth/views.py`中的`LoginView.post()`), 在邮箱和密码正确时取得 `jwt_token` 和 `user` 信息存储在浏览器中, 并且通过`Vue.路由守卫`实现前端的访问限制(必须登录才能访问), 但是后端依旧可以被随便请求接口, 所以我还需要给项目后端增加认证
+
+- 在`settings.py` 中配置 `REST_FRAMEWORK`
+
+```py
+# DRF 配置项
+REST_FRAMEWORK = {
+    # 指定默认认证类
+    'DEFAULT_AUTHENTICATION_CLASSES': ['apps.oaauth.authentications.JWTAuthentication']
+}
+```
+
+### 两种解决思路
+
+1. 导入`from rest_framework.permissions import IsAuthenticated`, 然后在每个需要登录才能访问的类视图里声明`permission_class=IsAuthenticated`
+2. 导入`IsAuthenticated`后, 写一个父类, 里面声明`permission_class=IsAuthenticated`, 然后需要登录的接口继承这个类.
+
+### 最优解: 中间件
+
+> 仔细分析本项目, 作为一个 OA 系统, 用户想要访问任何页面,不都是必须要登录的吗?(除了登录页面)
+
+- 什么是中间件? 1, 在请求达到视图前做一些事情. 2, 在响应返回浏览器之前做一些事情.
+
+- 新建中间件`~/apps/oaauth/middlewares.py`, 以下是全部代码
+
+```py
+from django.utils.deprecation import MiddlewareMixin # django官方自己的中间件父类
+# 我们在要在中间件里实现与JWTAuthentication相同的事, 所以以下这些包都需要
+import jwt # jwt包
+from django.conf import settings # 设置,要用到里面的 SECRET_KEY
+from rest_framework.authentication import get_authorization_header # 获取请求头里的认证数据
+from rest_framework import exceptions,status # drf异常和状态码
+from jwt.exceptions import ExpiredSignatureError # jwt超时验证
+from .models import OAUser # 重写的USER模型
+# 这两个类比较特殊
+from django.http.response import JsonResponse # 首先中间件验证出错必须返回django自己的response
+from django.contrib.auth.models import AnonymousUser # 需要匿名用户是因为, 访问login页面时本来就没有request.user, 所以django会报错说request没有user属性(具体在authentications.py中)
+
+class LoginCheckMiddleware(MiddlewareMixin):
+    """
+    关于中间件
+        1, 首先必须继承MiddlewareMixin
+        2, 中间件的函数只能两个返回值
+            - None: 继续执行下一步
+            - HttpResponse / JsonResponse: 拒绝进行下一步, 中间件挡住
+    """
+    keyword = 'JWT'
+
+    # process_view(self, 请求, 视图函数, 视图参数, 视图可变参数): 在请求到达视图前执行:
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        # 首先是登录页面, 说明一切正常
+         if request.path == '/auth/login':
+            # 为了防止报错, 所以给request.user属性设置为匿名用户
+            request.user = AnonymousUser()
+            # reqeust.auth 设置为空
+            request.auth = None
+            # 返回 None, 一切正常, 进入下一步
+            return None
+        # 如果不是登录页面, 开始尝试
+        try:
+            # 复习JWT: 生成JWT认证令牌:jwt.encode({载荷对象}, 密钥, 签名算法algorithm='HS256')
+            # 载荷对象里面就是{"userid": user.pk, "exp": expire_time} 即用户主键+过期时间
+            # 所以从请求头里获取了这个JSON字符串,我们需要拆分成数组
+            # get_authorization_header(request)获取 JWT 并且拆分.split()
+            auth = get_authorization_header(request).split()
+
+            # 如果没有 JWT, 或者 JWT 解码后小写的第一个单词, 不是 'jwt'
+            if not auth or auth[0].lower() != self.keyword.lower().encode():
+                raise exceptions.ValidationError("请传入JWT!")
+
+            # 如果JWT的长度只有1, 格式不正确
+            if len(auth) == 1:
+                raise exceptions.AuthenticationFailed("不可用的JWT请求头!")
+            # 同样,JWT的长度大于2, 说明.split()拆的时候,多了一个空格
+            elif len(auth) > 2:
+                raise exceptions.AuthenticationFailed("不可用的JWT请求头！JWT Token中间不应该有空格!")
+
+            """
+            # 所以jwt作为json字符串调用split()方法拆成数组之后,长度只能为2才对,因此可以把上面两句这么写
+            if len(auth) != 2:
+                raise exceptions.AuthenticationFailed("令牌认证失败!")
+            """
+
+            try:
+                # auth[1] 也就是 token
+                jwt_token = auth[1]
+                # 解码token jwt.decode(token, 密钥, 签名算法algorithms='HS256')
+                jwt_info = jwt.decode(jwt_token, settings.SECRET_KEY, algorithms='HS256')
+                # 解码完了 jwt_info 就是一个存储着 userid 和 过期时间的对象了, 也就是 jwt.encode()的第一个参数:载荷对象
+                # 获取载荷对象的userid属性
+                userid = jwt_info.get('userid')
+                try:
+                    # 再根据userid调用OAuser模型,终于取得了用户的信息
+                    user = OAUser.objects.get(pk=userid)
+                    # 绑定信息到 request 上面
+                    request.user = user
+                    request.auth = jwt_token
+                # 如果对象不存在
+                except:
+                    # 报错
+                    raise exceptions.AuthenticationFailed("用户不存在!")
+            # 或者JWT.exp超时过期了
+            except ExpiredSignatureError:
+                # 报错
+                raise exceptions.AuthenticationFailed("令牌已过期！")
+        # 或者压根就没法从请求头里取到任何JWT信息, 说明没有登录
+        except :
+            return JsonResponse(data={"detail": "请先登录！"}, status=status.HTTP_403_FORBIDDEN)
+```
+
+- 写好中间件后,还要在`settings.py`中加载, 同时为了防止重复验证, 重新配置`REST_FRAMEWORK`
+
+```py
+# ...
+MIDDLEWARE = [
+    # ...
+    'apps.oaauth.middlewares.LoginCheckMiddleware'
+]
+# DRF 配置项
+REST_FRAMEWORK = {
+    # 先前用这个
+    # 'DEFAULT_AUTHENTICATION_CLASSES': ['apps.oaauth.authentications.JWTAuthentication']
+    # 现在用这个
+    'DEFAULT_AUTHENTICATION_CLASSES': ['apps.oaauth.authentications.UserTokenAuthentication']
+}
+```
+
+- 在`~/apps/oaauth/authentications.py` 中完成 `UserTokenAuthentication` 认证类:
+
+```py
+class UserTokenAuthentication(BaseAuthentication):
+    def authenticate(self, request):
+        return request._request.user, request._request.auth
+```
+
+> 这里需要注意, 我们现在在和两个 request 打交道, 一个是 `django.http.request.Request` 的实例, 一个是`DRF`封装了前面的`Request`形成的`request`, 所以想要通过 drf.request 获取 django.request, 就需要`request._request`
+
+- 我们这里什么都没验证, 因为到请求跑到这里来之前, 必须经过中间件`LoginCheckMiddleware.process_view()`方法, 而该方法已经帮我们完成了验证, 现在就只需要把`user`和`auth`交给`request`对象, 然后所有视图接口的 request 里面就都有了 user 和 auth 两个属性供后续使用
+
+- 测试, 在`~/apps/oaauth/views.py`中创建一个接下来要完成的视图`RestPassword`
+  > 接下来开发的接口: 重置密码,现在先用于测试后台认证是否生效
+
+```py
+class RestPasswordView(APIView):
+    def get(self, request):
+        return Response({'message': '成了!'}, status=status.HTTP_200_OK)
+```
+
+- 配置路由 `~apps/oaauth/urls.py`
+
+```py
+# ...
+path('restpassword', views.RestPasswordView.as_view(), name='restpassword')
+```
+
+- 使用`Postman`进行测试
+  1. POST 请求接口`/auth/login`, 输入正确的邮箱和密码, 拿到 TOKEN, 复制
+  2. GET 请求接口`/auth/restpassword`, 如果不在`Headers`里带上正确的`Authorization`, 那么会提示`请先登录`,要想访问:
+  - key = `Authorization`, value = `复制的TOKEN`
+
+### 给后台系统"瘦身"
+
+> `settings.py` 里面有很多自带的 app, 中间件, 模板我不需要, 他们非必要的存在会影响项目的性能: 比如中间件部分, 每次发送任何请求或者做出任何响应都要经过一些不必要的中间件.
+
+- 编辑`settings.py`
+
+```py
+# app 部分
+INSTALLED_APPS = [
+    # 'django.contrib.admin', # django自带的后台管理,不需要
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    # 'django.contrib.sessions', # 不用 cookie & session, 不需要
+    # 'django.contrib.messages', # django自带的消息提示, 不需要
+    'django.contrib.staticfiles',
+    # DRF
+    'rest_framework',
+    # corsheaders
+    'corsheaders',
+    # 项目app
+    'apps.oaauth' # 用户
+]
+
+# 中间件部分
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    # 'django.contrib.sessions.middleware.SessionMiddleware', # 不用 cookie & session, 不需要
+    # corsheaders 务必放在 CommonMiddleware 前
+    'corsheaders.middleware.CorsMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    # # 'django.middleware.csrf.CsrfViewMiddleware', # csrf_token, 不需要, 最开始就注销了
+    # 'django.contrib.auth.middleware.AuthenticationMiddleware', # 用户认证, 不需要, 自己写好了
+    # 'django.contrib.messages.middleware.MessageMiddleware', # django自带的消息系统, 不需要
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'apps.oaauth.middlewares.LoginCheckMiddleware'
+]
+
+# 模板配置部分
+TEMPLATES = [
+    {
+        'BACKEND': 'django.template.backends.django.DjangoTemplates',
+        'DIRS': [BASE_DIR / 'templates']
+        ,
+        'APP_DIRS': True,
+        'OPTIONS': {
+            'context_processors': [
+                'django.template.context_processors.debug',
+                'django.template.context_processors.request',
+                'django.contrib.auth.context_processors.auth',
+                # 'django.contrib.messages.context_processors.messages', # 消息系统, 不需要
+            ],
+        },
+    },
+]
+```
+
+> 注释完了会报错, 重启项目即可

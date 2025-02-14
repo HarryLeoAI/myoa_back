@@ -30,3 +30,10 @@ class LoginView(APIView):
             detail = list(serializer.errors.values())[0][0]
             # drf 在返回响应, 状态码非200时, 返回的参数名叫detail而非message.
             return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+class RestPasswordView(APIView):
+    """
+    重置密码
+    """
+    def get(self, request):
+        return Response({'message': '成了!'}, status=status.HTTP_200_OK)

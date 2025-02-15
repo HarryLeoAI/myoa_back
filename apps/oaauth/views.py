@@ -1,6 +1,6 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from .serializers import LoginSerializer, UserSerializer, RestPasswordSerializer
+from .serializers import LoginSerializer, UserSerializer, ResetPasswordSerializer
 from datetime import datetime
 from .authentications import generate_jwt
 from rest_framework import status
@@ -31,12 +31,12 @@ class LoginView(APIView):
             # drf 在返回响应, 状态码非200时, 返回的参数名叫detail而非message.
             return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
-class RestPasswordView(APIView):
+class ResetPasswordView(APIView):
     """
     重置密码
     """
-    def post(self, request):
-        serializer = RestPasswordSerializer(data=request.data, context={'request': request})
+    def put(self, request):
+        serializer = ResetPasswordSerializer(data=request.data, context={'request': request})
 
         if serializer.is_valid():
             password = serializer.validated_data.get('new_password')

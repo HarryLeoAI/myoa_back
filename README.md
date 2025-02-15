@@ -912,7 +912,7 @@ TEMPLATES = [
 from rest_framework import serializers, exceptions
 # ...
 
-class RestPasswordSerializer(serializers.Serializer):
+class ResetPasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(max_length=30, min_length=6)
     new_password = serializers.CharField(max_length=30, min_length=6)
     check_new_password = serializers.CharField(max_length=30, min_length=6)
@@ -939,22 +939,20 @@ class RestPasswordSerializer(serializers.Serializer):
   
 - 完善视图层类视图(接口) `RestPasswordView`
 ```python
-class RestPasswordView(APIView):
+class ResetPasswordView(APIView):
     """
     重置密码
     """
-    def post(self, request):
-        # 先序列化, 这里context属性, 是用于传入自定义数据的, 要求以字典(键值对)的格式
-        serializer = RestPasswordSerializer(data=request.data, context={'request': request})
-        # 如果数据验证成功
+    def put(self, request):
+        serializer = ResetPasswordSerializer(data=request.data, context={'request': request})
+
         if serializer.is_valid():
-            # 获取密码
             password = serializer.validated_data.get('new_password')
-            # 修改密码
             request.user.set_password(password)
-            # 保存修改
             request.user.save()
             return Response({'message': '密码修改成功'}, status=status.HTTP_200_OK)
         else:
             return Response({'detail':list(serializer.errors.values())[0][0]}, status=status.HTTP_400_BAD_REQUEST)
 ```
+
+> 先开始把`Reset`写成`rest`了, 一开始也用的`post`修改, 现在改`put`了

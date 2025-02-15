@@ -5,5 +5,5 @@ app_name = 'oaauth'
 
 urlpatterns = [
     path('login', views.LoginView.as_view(), name='login'),
-    path('restpassword', views.RestPasswordView.as_view(), name='restpassword')
+    path('resetpassword', views.ResetPasswordView.as_view(), name='resetpassword')
 ]

@@ -52,7 +52,7 @@ class UserSerializer(serializers.ModelSerializer):
         exclude = ['password', 'groups', 'user_permissions']
 
 
-class RestPasswordSerializer(serializers.Serializer):
+class ResetPasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(max_length=30, min_length=6)
     new_password = serializers.CharField(max_length=30, min_length=6)
     check_new_password = serializers.CharField(max_length=30, min_length=6)

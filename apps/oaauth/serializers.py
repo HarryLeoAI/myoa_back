@@ -1,4 +1,4 @@
-from rest_framework import serializers
+from rest_framework import serializers, exceptions
 from .models import OAUser, UserStatusChoices, OADepartment
 
 
@@ -50,3 +50,26 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = OAUser
         exclude = ['password', 'groups', 'user_permissions']
+
+
+class RestPasswordSerializer(serializers.Serializer):
+    old_password = serializers.CharField(max_length=30, min_length=6)
+    new_password = serializers.CharField(max_length=30, min_length=6)
+    check_new_password = serializers.CharField(max_length=30, min_length=6)
+
+    def validate(self, attrs):
+        old_password = attrs['old_password']
+        new_password = attrs['new_password']
+        check_new_password = attrs['check_new_password']
+
+        if new_password != check_new_password:
+            raise exceptions.ValidationError('两次密码输入不一致')
+
+        if new_password == old_password:
+            raise exceptions.ValidationError('新旧密码相同!')
+
+        user = self.context['request'].user
+        if not user.check_password(old_password):
+            raise exceptions.ValidationError('旧密码错误!')
+
+        return attrs

@@ -1122,6 +1122,9 @@ class AbsentViewSet(mixins.CreateModelMixin,
     serializer_class = None
 ```
 
+- 不直接继承`viewsets.ModelView`的原因是项目不需要`详情页`, 后续任何时候不需要任何功能,都可以这么写视图集:挑选需要的继承Mixin,
+  最后继承`viewsets.GenericViewSet`(视图集初始化)
+
 ### 路由
 
 - `~/apps/absent/urls.py`
@@ -1139,7 +1142,7 @@ urlpatterns = [
               ] + router.urls
 ```
 
->视图集必须这样: 注册后拼接到urlpatterns里
+> 视图集必须这样: 注册后拼接到urlpatterns里
 
 - 主路由 `~/myoa_back/urls.py`
 
@@ -1151,3 +1154,257 @@ urlpatterns = [
     path('', include('apps.absent.urls'))  # 考勤
 ]
 ```
+
+### 完善序列化
+
+1. 修复bug, 判断`absent_type_id`是否存在, 万一有人直接在form.data里面带上不存在的`absent_type_id`, 就会引发程序bug
+2. 重写`create()`和`update()`函数, 一是因为表单数据直接传过来, 请求体里是不带user属性的, 必须从请求头里面取.
+   二是因为还要判断请假发起人的审批者到底是谁. 同样,审批者也需要登录,也需要判断他有没有权限审批某个请假请求.
+
+- 完整的序列化代码`~/apps/absent/serializers.py`
+
+```python
+# 导入drf.序列化包, 异常包
+from rest_framework import serializers, exceptions
+# 模型
+from .models import Absent, AbsentType, AbsentStatusChoices
+# 导入用户包
+from apps.oaauth.serializers import UserSerializer
+# 导入公共函数包
+from .utils import get_responder
+
+
+class AbsentTypeSerializer(serializers.ModelSerializer):
+    """
+    考勤(请假)类型序列化
+    """
+
+    class Meta:
+        model = AbsentType
+        fields = "__all__"
+
+
+class AbsentSerializer(serializers.ModelSerializer):
+    """
+    考勤序列化
+    """
+    absent_type = AbsentTypeSerializer(read_only=True)
+    absent_type_id = serializers.IntegerField(write_only=True)
+    requester = UserSerializer(read_only=True)
+    responder = UserSerializer(read_only=True)
+
+    # 完善: 判断传入的考勤类型是否存在
+    def validate_absent_type_id(self, value):
+        if not AbsentType.objects.filter(pk=value).exists():
+            raise exceptions.ValidationError("考勤类型不存在！")
+        return value
+
+    class Meta:
+        model = Absent
+        fields = "__all__"
+
+    # 重写创建考勤(发起请假)方法
+    def create(self, validated_data):
+        """发起请假"""
+        # 获取request请求信息, 我需要里面的user
+        request = self.context['request']
+        # 请假发起者
+        user = request.user
+        # 利用公共函数库里的get_responder()获取当前用户的审批者
+        responder = get_responder(user)
+
+        # 请假状态判断: 如果没有审批者, 说明是公司老大, 不需要审批请假直接通过
+        if responder is None:
+            validated_data['status'] = AbsentStatusChoices.AGREED
+        # 否则新创建的考勤必须是待审批状态
+        else:
+            validated_data['status'] = AbsentStatusChoices.REVIEW
+
+        # 写入数据库(**validated_data, 更多可变参数)
+        return Absent.objects.create(**validated_data, requester=user, responder=responder)
+
+    # 重写请假审核方法
+    def update(self, instance, validated_data):
+        """审批请假"""
+        # 获取当前登录用户
+        request = self.context['request']
+        user = request.user
+
+        # 先判断:只有待审核的考勤才能被修改(审核)
+        if instance.status != AbsentStatusChoices.REVIEW:
+            raise exceptions.APIException(detail='禁止修改!')
+
+        # 然后判断本条考勤的审核者是不是当前登录用户
+        if instance.responder.uid != user.uid:
+            raise exceptions.AuthenticationFailed(detail='没有权限!')
+
+        # 更新审核信息(前端传入status要么同意AGREED,要么拒绝REJECT)
+        instance.status = validated_data['status']
+        instance.response_content = validated_data['response_content']
+        instance.save()
+
+        return instance
+```
+
+- 这些方法都是重写`ModelSerializer`里已经定义好的方法, 要重写的原因是因为我有更复杂的逻辑.但其参数不会变.
+- 更新`update`和创建`create`最大的不同是, update多一个`instance`参数, 这个参数进入函数内部, 也就是当前要修改的实例ORM对象,
+  它从哪里来呢? 就从路由的参数里来.
+    - 新增的路由是`POST`请求`localhost:8000/absent`
+    - 修改的路由是`PUT`请求`localhost:8000/absent/absent.id`
+- **公共函数库**: 不仅在`serializers.py`里我需要用到一个功能:提取当前用户的审批者, 在`views.py`里我也需要用到这个函数,
+  所以我把这个函数写在一个新建的文件里`~/apps/absent/utils.py`
+
+```python
+"""
+absent公共函数库
+"""
+
+
+def get_responder(user):
+    """
+    :param user:  当前登录用户, 请从 request.user中获取
+    :return:      当前用户发起考勤(请假)时的审批者
+    """
+    # 如果当前用户所在部门的领导是他自己
+    if user.department.leader.uid == user.uid:
+        # 同时他的部门叫做董事会, 说明这个人就是公司老板
+        if user.department.name == '董事会':
+            # 那么他请假自然不需要任何人同意
+            responder = None
+        else:
+            # 但如果他是部门领导,但部门不是董事会,他请假就需要董事会分管他所在部门的领导进行审批
+            responder = user.department.manager
+    else:
+        # 如果他连部门领导都不是, 也就是牛马, 牛马请假需要部门领导审批
+        responder = user.department.leader
+
+    # 返回当前用户的审批人
+    return responder
+```
+
+### 完善视图
+
+1. 重写更新(审批考勤)
+   方法,原因是以视图集的形式调用序列化的update方法,DRF要求数据提交时,数据必须带上所有字段.可以查看源码`rest_framework_mixins.py`
+   中的`UpdateModelMixin`:
+
+```python
+# ...
+class UpdateModelMixin:
+    """
+    Update a model instance.
+    """
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', False)  # 允许只传部分参数? 默认不允许!
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        serializer.is_valid(raise_exception=True)
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            # If 'prefetch_related' has been applied to a queryset, we need to
+            # forcibly invalidate the prefetch cache on the instance.
+            instance._prefetched_objects_cache = {}
+
+        return Response(serializer.data)
+# ...
+```
+2. 重写列表(查看考勤列表)方法, 根据逻辑, 用户要么查看自己发起的考勤记录, 要么查看自己下属的考勤进行审批, 并不能看见别人的或者不是本部门下级的考勤记录
+3. 供发起考勤时,获取所有考勤类型的接口
+4. 供发起考勤时,获取当前用户的审批者的接口
+- 源代码`~/apps/absent/views.py`
+```python
+# ...
+
+# 1. 重写更新方法
+    def update(self, request, *args, **kwargs):
+        """
+        重写update方法
+        原因是:
+        drf 要求 PUT 请求过来进行数据更新时,必须要把所有字段带上
+        但是我们审核请假只需要改部分数据(考勤的状态1变2, 加上一个审批内容)
+        """
+        # 所以必须要声明kwargs['partial'] = True, 即允许只上传部分字段
+        kwargs['partial'] = True
+        # 调用父类的update方法更新数据
+        return super().update(request, *args, **kwargs)
+
+# 2. 重写列表方法
+    def list(self, request, *args, **kwargs):
+        """
+        重写list方法
+        原因是:
+        不是每个人都能获取所有的考勤信息,要么
+        1, 个人获取个人的考勤信息
+        2, 个人获取属下的考勤信息
+        因此, 不带参数或者参数 who不等于sub的时候, 返回自己的考勤信息
+        带参数 .../?who=sub的时候, 返回下属的考勤信息
+        """
+        queryset = self.get_queryset()
+        # 获取地址里携带的参数 ../?who=???
+        who = request.query_params.get('who')
+        # 如果是 ../?who=sub
+        if who and who == 'sub':
+            # 那么获取审核者是当前用户的所有考勤信息
+            result = queryset.filter(responder = request.user)
+        else:
+            # 否者获取发起者是当前用户的所有考勤信息
+            result = queryset.filter(requester = request.user)
+        
+        # 这里序列化的数据是多条, 必须要声明many=True, 否则会报错
+        serializer = self.serializer_class(result, many=True)
+        
+        # 返回给前端
+        return response.Response(serializer.data)
+
+# 3. 返回所有考勤类型的接口
+class AbsentTypeView(APIView):
+    """
+    返回所有的请假类型
+    """
+    def get(self, request):
+        types = AbsentType.objects.all()
+        serializer = AbsentTypeSerializer(types, many=True)
+
+        return response.Response(serializer.data)
+
+# 4. 返回审批者的接口
+class ResponderView(APIView):
+    """
+    返回当前登录用户发起考勤时, 他的审批者
+    """
+    def get(self, request):
+        user = request.user
+        responder = get_responder(user)
+        serializer = UserSerializer(responder)
+
+        return response.Response(serializer.data)
+```
+### 手动测试
+1. 创建`~/apps/absent/management/commands/initabsenttypes.py`
+```python
+from django.core.management.base import BaseCommand
+from apps.absent.models import AbsentType
+
+
+class Command(BaseCommand):
+    def handle(self, *args, **options):
+        absent_list = ["事假", "病假", "工伤假", "婚假", "丧假", "产假", "探亲假", "公假", "年休假"]
+        absents_types = []
+        for name in absent_list:
+            absents_types.append(AbsentType(name=name))
+
+        # 批量创建 .bulk_create(由对象组成的数组,每个对象作为一条新记录)
+        AbsentType.objects.bulk_create(absents_types)
+        self.stdout.write('考勤类型数据初始化成功！')
+```
+
+2. 执行命令, 写入这些请假类型到数据库中
+3. 用postman进行测试,包括
+   - 发起考勤
+   - 审核考勤
+   - 从接口获取考勤类型
+   - 从接口获取当前登录用户发起考勤后的审核人
+
+> 到这里,我创建了`absent`考勤模块, 写好四个东西:1模型, 2序列化, 3视图, 4路由.在序列化和视图层, 我采用将重复代码抽离出来, 写在`utils.py`中的方法优化了代码, 采用重写父类写好的函数的形式完成了更复杂的逻辑. 最终完成了一套考勤模块的接口. 接下来改去完成前端了

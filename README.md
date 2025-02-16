@@ -715,7 +715,8 @@ from .models import OAUser  # 重写的USER模型
 # 这两个类比较特殊
 from django.http.response import JsonResponse  # 首先中间件验证出错必须返回django自己的response
 from django.contrib.auth.models import
-    AnonymousUser  # 需要匿名用户是因为, 访问login页面时本来就没有request.user, 所以django会报错说request没有user属性(具体在authentications.py中)
+
+AnonymousUser  # 需要匿名用户是因为, 访问login页面时本来就没有request.user, 所以django会报错说request没有user属性(具体在authentications.py中)
 
 
 class LoginCheckMiddleware(MiddlewareMixin):
@@ -907,9 +908,13 @@ TEMPLATES = [
 # 修改密码
 
 ### 后端接口实现
+
 - 在`~/apps/oaauth/serializers.py` 中新建`RestPasswordSerializer`类, 用于数据验证
+
 ```python
 from rest_framework import serializers, exceptions
+
+
 # ...
 
 class ResetPasswordSerializer(serializers.Serializer):
@@ -927,7 +932,7 @@ class ResetPasswordSerializer(serializers.Serializer):
 
         if new_password == old_password:
             raise exceptions.ValidationError('新旧密码相同!')
-        
+
         # 想要取实例序列化时传入在context的参数, 直接 `self.context['键名'].数据` 即可
         user = self.context['request'].user
         if not user.check_password(old_password):
@@ -935,14 +940,17 @@ class ResetPasswordSerializer(serializers.Serializer):
 
         return attrs
 ```
-  > 复习: serializer 是 drf 提供的序列化, 主要功能:1, 把ORM对象转为JSON. 2, 实现和django.form类似的数据验证功能
-  
+
+> 复习: serializer 是 drf 提供的序列化, 主要功能:1, 把ORM对象转为JSON. 2, 实现和django.form类似的数据验证功能
+
 - 完善视图层类视图(接口) `RestPasswordView`
+
 ```python
 class ResetPasswordView(APIView):
     """
     重置密码
     """
+
     def put(self, request):
         serializer = ResetPasswordSerializer(data=request.data, context={'request': request})
 
@@ -952,7 +960,194 @@ class ResetPasswordView(APIView):
             request.user.save()
             return Response({'message': '密码修改成功'}, status=status.HTTP_200_OK)
         else:
-            return Response({'detail':list(serializer.errors.values())[0][0]}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'detail': list(serializer.errors.values())[0][0]}, status=status.HTTP_400_BAD_REQUEST)
 ```
 
 > 先开始把`Reset`写成`rest`了, 一开始也用的`post`修改, 现在改`put`了
+
+# 考勤
+
+### 创建app
+
+- 执行命令`python manage.py startapp absent`
+- 把新建app的目录拖到`~/apps/~`下
+- 在`~/apps/absent/`下创建`urls.py`并编辑,指定app_name:`app_name = 'absent'`
+- `settings.py`中安装app
+
+```python
+INSTALLED_APPS = [
+    # ...
+    # DRF
+    'rest_framework',
+    # 跨域请求
+    'corsheaders',
+    # 项目app
+    'apps.oaauth',  # 用户
+    'apps.absent'  # 考勤
+]
+```
+
+### 模型
+
+- 编辑 `~/apps/absent/models.py`
+
+```python
+from django.db import models
+from django.contrib.auth import get_user_model
+
+OAUser = get_user_model()
+
+
+class AbsentStatusChoices(models.IntegerChoices):
+    """
+    请假状态
+    1审批中
+    2审核通过
+    3拒绝
+    """
+    REVIEW = 1
+    AGREED = 2
+    REJECT = 3
+
+
+class AbsentType(models.Model):
+    """
+    请假类型
+    """
+    name = models.CharField(max_length=64)
+    create_time = models.DateTimeField(auto_now_add=True)
+
+
+class Absent(models.Model):
+    """
+    考勤
+    """
+    # 请假标题
+    title = models.CharField(max_length=128)
+    # 请假内容
+    content = models.TextField()
+    # 请假类型
+    absent_type = models.ForeignKey(AbsentType, on_delete=models.CASCADE, related_name='absents',
+                                    related_query_name='absents')
+    # 请假发起人
+    requester = models.ForeignKey(OAUser, on_delete=models.CASCADE, related_name='my_absents',
+                                  related_query_name='my_absents')
+    # 请假审批人
+    responder = models.ForeignKey(OAUser, on_delete=models.CASCADE, related_name='sub_absents',
+                                  related_query_name='sub_absents', null=True)
+    # 请假状态
+    status = models.IntegerField(choices=AbsentStatusChoices, default=AbsentStatusChoices.REVIEW)
+    # 请假起始日期
+    start_date = models.DateField()
+    # 请假结束日期
+    end_date = models.DateField()
+    # 请假发起时间
+    create_time = models.DateTimeField(auto_now_add=True)
+    # 审批回复内容
+    response_content = models.TextField(blank=True)
+```
+
+- 需要注意:
+    - 引入用户模型是`from django.contrib.auth import get_user_model`,而非`from apps.oaauth.models import OAuser`
+    - 在`Absent`模型中, 我有两个外键都是关联OAuser,一个请假发起人,一个请假审批人,
+      所以一定要给这两个字段指定不同的`related_name`和`related_query_name`.
+    - 请假审批人可以为空, 因为董事会成员休假不再需要上级再审批了
+    - (请假开始日期,请假结束日期) 和请假发起时间是不同的, 请假发起时间是这条记录创建的时间.
+    - 审批回复内容可以为空(没审批前肯定是空)
+- 创建迁移, 迁移建表, 略
+
+### 序列化
+
+- 新建`~/apps/absent/serializers.py`
+
+```python
+from rest_framework import serializers
+from .models import Absent, AbsentType
+from apps.oaauth.serializers import UserSerializer
+
+
+class AbsentTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AbsentType
+        fields = "__all__"
+
+
+class AbsentSerializer(serializers.ModelSerializer):
+    absent_type = AbsentTypeSerializer(read_only=True)
+    absent_type_id = serializers.IntegerField(write_only=True)
+    requester = UserSerializer(read_only=True)
+    responder = UserSerializer(read_only=True)
+
+    class Meta:
+        model = Absent
+        fields = "__all__"
+
+    def create(self, validated_data):
+        """发起请假"""
+        pass
+
+    def update(self, instance, validated_data):
+        """审批请假"""
+        pass
+
+```
+
+- `read_only` 只读, ORM转字典再转JSON时, 该字段才会被序列化
+- `write_only` 只写, 前端上传到request.data里后, request.data作为参数传给序列化类进行实例创建时,该字段才会被序列化接收并转换为ORM模型里的指定字段
+
+> 也就是说,只给前端看的: `read_only`
+
+> 前端必须要写入的: `write_only`(通常是外键字段.id)
+
+- 必须要重写`create`和`update`: 因为请假和审批都和User有关, User又只在request里, 后面完善
+
+# 视图
+
+- `~/apps/absent/views.py`
+
+```python
+from rest_framework import viewsets, mixins
+from .models import Absent, AbsentType, AbsentStatusChoices
+
+
+class AbsentViewSet(mixins.CreateModelMixin,
+                    mixins.UpdateModelMixin,
+                    mixins.DestroyModelMixin,
+                    mixins.ListModelMixin,
+                    viewsets.GenericViewSet):
+    """
+    请假功能视图集
+    """
+    queryset = Absent.objects.all()
+    serializer_class = None
+```
+
+### 路由
+
+- `~/apps/absent/urls.py`
+
+```python
+from rest_framework.routers import DefaultRouter
+from . import views
+
+app_name = 'absent'
+
+router = DefaultRouter()
+router.register('absent', viewset=views.AbsentViewSet, basename='absent')
+
+urlpatterns = [
+              ] + router.urls
+```
+
+>视图集必须这样: 注册后拼接到urlpatterns里
+
+- 主路由 `~/myoa_back/urls.py`
+
+```python
+from django.urls import path, include
+
+urlpatterns = [
+    path('auth/', include('apps.oaauth.urls')),  # 用户
+    path('', include('apps.absent.urls'))  # 考勤
+]
+```

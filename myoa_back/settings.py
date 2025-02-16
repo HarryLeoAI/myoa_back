@@ -33,18 +33,16 @@ ALLOWED_HOSTS = []
 # Application definition
 
 INSTALLED_APPS = [
-    # 'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
-    # 'django.contrib.sessions',
-    # 'django.contrib.messages',
     'django.contrib.staticfiles',
     # DRF
     'rest_framework',
-    # corsheaders
+    # 跨域请求
     'corsheaders',
     # 项目app
-    'apps.oaauth' # 用户
+    'apps.oaauth',  # 用户
+    'apps.absent',  # 考勤
 ]
 
 MIDDLEWARE = [

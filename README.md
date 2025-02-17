@@ -1310,70 +1310,79 @@ class UpdateModelMixin:
         return Response(serializer.data)
 # ...
 ```
-2. 重写列表(查看考勤列表)方法, 根据逻辑, 用户要么查看自己发起的考勤记录, 要么查看自己下属的考勤进行审批, 并不能看见别人的或者不是本部门下级的考勤记录
+
+2. 重写列表(查看考勤列表)方法, 根据逻辑, 用户要么查看自己发起的考勤记录, 要么查看自己下属的考勤进行审批,
+   并不能看见别人的或者不是本部门下级的考勤记录
 3. 供发起考勤时,获取所有考勤类型的接口
 4. 供发起考勤时,获取当前用户的审批者的接口
+
 - 源代码`~/apps/absent/views.py`
+
 ```python
 # ...
 
 # 1. 重写更新方法
-    def update(self, request, *args, **kwargs):
-        """
-        重写update方法
-        原因是:
-        drf 要求 PUT 请求过来进行数据更新时,必须要把所有字段带上
-        但是我们审核请假只需要改部分数据(考勤的状态1变2, 加上一个审批内容)
-        """
-        # 所以必须要声明kwargs['partial'] = True, 即允许只上传部分字段
-        kwargs['partial'] = True
-        # 调用父类的update方法更新数据
-        return super().update(request, *args, **kwargs)
+def update(self, request, *args, **kwargs):
+    """
+    重写update方法
+    原因是:
+    drf 要求 PUT 请求过来进行数据更新时,必须要把所有字段带上
+    但是我们审核请假只需要改部分数据(考勤的状态1变2, 加上一个审批内容)
+    """
+    # 所以必须要声明kwargs['partial'] = True, 即允许只上传部分字段
+    kwargs['partial'] = True
+    # 调用父类的update方法更新数据
+    return super().update(request, *args, **kwargs)
+
 
 # 2. 重写列表方法
-    def list(self, request, *args, **kwargs):
-        """
-        重写list方法
-        原因是:
-        不是每个人都能获取所有的考勤信息,要么
-        1, 个人获取个人的考勤信息
-        2, 个人获取属下的考勤信息
-        因此, 不带参数或者参数 who不等于sub的时候, 返回自己的考勤信息
-        带参数 .../?who=sub的时候, 返回下属的考勤信息
-        """
-        queryset = self.get_queryset()
-        # 获取地址里携带的参数 ../?who=???
-        who = request.query_params.get('who')
-        # 如果是 ../?who=sub
-        if who and who == 'sub':
-            # 那么获取审核者是当前用户的所有考勤信息
-            result = queryset.filter(responder = request.user)
-        else:
-            # 否者获取发起者是当前用户的所有考勤信息
-            result = queryset.filter(requester = request.user)
-        
-        # 这里序列化的数据是多条, 必须要声明many=True, 否则会报错
-        serializer = self.serializer_class(result, many=True)
-        
-        # 返回给前端
-        return response.Response(serializer.data)
+def list(self, request, *args, **kwargs):
+    """
+    重写list方法
+    原因是:
+    不是每个人都能获取所有的考勤信息,要么
+    1, 个人获取个人的考勤信息
+    2, 个人获取属下的考勤信息
+    因此, 不带参数或者参数 who不等于sub的时候, 返回自己的考勤信息
+    带参数 .../?who=sub的时候, 返回下属的考勤信息
+    """
+    queryset = self.get_queryset()
+    # 获取地址里携带的参数 ../?who=???
+    who = request.query_params.get('who')
+    # 如果是 ../?who=sub
+    if who and who == 'sub':
+        # 那么获取审核者是当前用户的所有考勤信息
+        result = queryset.filter(responder=request.user)
+    else:
+        # 否者获取发起者是当前用户的所有考勤信息
+        result = queryset.filter(requester=request.user)
+
+    # 这里序列化的数据是多条, 必须要声明many=True, 否则会报错
+    serializer = self.serializer_class(result, many=True)
+
+    # 返回给前端
+    return response.Response(serializer.data)
+
 
 # 3. 返回所有考勤类型的接口
 class AbsentTypeView(APIView):
     """
     返回所有的请假类型
     """
+
     def get(self, request):
         types = AbsentType.objects.all()
         serializer = AbsentTypeSerializer(types, many=True)
 
         return response.Response(serializer.data)
 
+
 # 4. 返回审批者的接口
 class ResponderView(APIView):
     """
     返回当前登录用户发起考勤时, 他的审批者
     """
+
     def get(self, request):
         user = request.user
         responder = get_responder(user)
@@ -1381,8 +1390,11 @@ class ResponderView(APIView):
 
         return response.Response(serializer.data)
 ```
+
 ### 手动测试
+
 1. 创建`~/apps/absent/management/commands/initabsenttypes.py`
+
 ```python
 from django.core.management.base import BaseCommand
 from apps.absent.models import AbsentType
@@ -1402,9 +1414,38 @@ class Command(BaseCommand):
 
 2. 执行命令, 写入这些请假类型到数据库中
 3. 用postman进行测试,包括
-   - 发起考勤
-   - 审核考勤
-   - 从接口获取考勤类型
-   - 从接口获取当前登录用户发起考勤后的审核人
+    - 发起考勤
+    - 审核考勤
+    - 从接口获取考勤类型
+    - 从接口获取当前登录用户发起考勤后的审核人
 
-> 到这里,我创建了`absent`考勤模块, 写好四个东西:1模型, 2序列化, 3视图, 4路由.在序列化和视图层, 我采用将重复代码抽离出来, 写在`utils.py`中的方法优化了代码, 采用重写父类写好的函数的形式完成了更复杂的逻辑. 最终完成了一套考勤模块的接口. 接下来改去完成前端了
+> 到这里,我创建了`absent`考勤模块, 写好四个东西:1模型, 2序列化, 3视图, 4路由.在序列化和视图层, 我采用将重复代码抽离出来,
+> 写在`utils.py`中的方法优化了代码, 采用重写父类写好的函数的形式完成了更复杂的逻辑. 最终完成了一套考勤模块的接口.
+> 接下来改去完成前端了
+
+### 完成分页
+
+- 新建`~/apps/absent/paginations.py`, 做好分页配置,略
+- 在视图层导入并且为视图集声明`pagination_class`
+- 改写`list()`方法
+
+```python
+    def list(self, request, *args, **kwargs):
+    queryset = self.get_queryset()
+    who = request.query_params.get('who')
+    if who and who == 'sub':
+        result = queryset.filter(responder=request.user)
+    else:
+        result = queryset.filter(requester=request.user)
+
+    # 分页
+    page = self.paginate_queryset(result)
+    if page is not None:
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    serializer = self.serializer_class(result, many=True)
+    return response.Response(serializer.data)
+```
+
+> 分页配置中, page_size 的值务必和前端一致.

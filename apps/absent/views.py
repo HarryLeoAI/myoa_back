@@ -4,6 +4,7 @@ from .serializers import AbsentSerializer, AbsentTypeSerializer
 from rest_framework.views import APIView
 from .utils import get_responder
 from apps.oaauth.serializers import UserSerializer
+from .paginations import AbsentPagination
 
 
 class AbsentViewSet(mixins.CreateModelMixin,
@@ -17,6 +18,8 @@ class AbsentViewSet(mixins.CreateModelMixin,
     queryset = Absent.objects.all()
     serializer_class = AbsentSerializer
 
+    pagination_class = AbsentPagination
+
     def update(self, request, *args, **kwargs):
         kwargs['partial'] = True
         return super().update(request, *args, **kwargs)
@@ -29,8 +32,13 @@ class AbsentViewSet(mixins.CreateModelMixin,
         else:
             result = queryset.filter(requester = request.user)
 
-        serializer = self.serializer_class(result, many=True)
+        # 分页
+        page = self.paginate_queryset(result)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
 
+        serializer = self.serializer_class(result, many=True)
         return response.Response(serializer.data)
 
 class AbsentTypeView(APIView):

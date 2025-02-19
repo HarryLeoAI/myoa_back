@@ -15,7 +15,7 @@ class AbsentViewSet(mixins.CreateModelMixin,
     """
     请假功能视图集
     """
-    queryset = Absent.objects.all()
+    queryset = Absent.objects.all().order_by('-create_time', 'status')
     serializer_class = AbsentSerializer
 
     pagination_class = AbsentPagination
@@ -27,17 +27,25 @@ class AbsentViewSet(mixins.CreateModelMixin,
     def list(self, request, *args, **kwargs):
         queryset = self.get_queryset()
         who = request.query_params.get('who')
+        status = request.query_params.get('status')
+
+        # 根据用户筛选
         if who and who == 'sub':
             result = queryset.filter(responder = request.user)
         else:
             result = queryset.filter(requester = request.user)
 
-        # 分页
+        # 根据状态对筛选结果再次筛选
+        if status:
+            result = result.filter(status = status)
+
+        # 对最终结果进行分页
         page = self.paginate_queryset(result)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
+        # 处理为json返回给前端
         serializer = self.serializer_class(result, many=True)
         return response.Response(serializer.data)
 

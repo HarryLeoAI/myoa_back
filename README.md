@@ -1433,7 +1433,7 @@ class Command(BaseCommand):
     def list(self, request, *args, **kwargs):
 
 
-    queryset = self.get_queryset()
+queryset = self.get_queryset()
 who = request.query_params.get('who')
 if who and who == 'sub':
     result = queryset.filter(responder=request.user)
@@ -1511,12 +1511,14 @@ return response.Response(serializer.data)
       2将表单数据写入数据库. 所以往往有外键的字段需要重写 create/update 方法,因为传过来的数据,比如 inform.departments
       它不只是一个由department.id 组成的列表, 而是department的全部信息, 所以前端我们要传过来的是department_ids,
       并且声明department只读不写, 这样前端过来的数据就只有department.id 组成的列表了
+
 ### 图片上传
 
 > 前端已经建好了发布通知的页面, 集成了wangEditor富文本编辑器, 现在要实现wangEditor的图片上传功能
 
 1. 新建app image
 2. 创建序列化文件`serializers.py`, 该文件用于验证图片上传格式是否合规
+
 ```python
 from rest_framework import serializers
 from django.core.validators import FileExtensionValidator, get_available_image_extensions
@@ -1544,14 +1546,16 @@ class UploadImageSerializer(serializers.Serializer):
         # 每个 validate_字段(self, value) 函数,都必须返回 value
         return value
 ```
+
 3. 编辑视图`views.py`
+
 ```python
 from rest_framework.views import APIView
 from .serializers import UploadImageSerializer
 from rest_framework.response import Response
-from shortuuid import uuid # 导入uuid进行文件重命名防攻击
-import os # 导入os包,等会要用里面的一个函数获取文件后缀名
-from django.conf import settings # 导入配置项, 需要里面关于MEDIA的配置项
+from shortuuid import uuid  # 导入uuid进行文件重命名防攻击
+import os  # 导入os包,等会要用里面的一个函数获取文件后缀名
+from django.conf import settings  # 导入配置项, 需要里面关于MEDIA的配置项
 
 
 class UploadImageView(APIView):
@@ -1595,21 +1599,46 @@ class UploadImageView(APIView):
                 "message": list(serializer.errors.values())[0][0]
             })
 ```
-> 视图return回去的JSON, 是按照wangEditor要求的格式!成功返回`'errno':0` + `data`(data.url必须, 其余可选), 失败返回`'errno':1` + `message`
+
+> 视图return回去的JSON, 是按照wangEditor要求的格式!成功返回`'errno':0` + `data`(data.url必须, 其余可选),
+> 失败返回`'errno':1` + `message`
+
 4. 编辑配置文件`settings.py`
+
 ```python
 MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_URL = "/media/"
 ```
+
 > 在根目录下新建`~/media/`文件夹,用于存放上传的图片
 
 5. 配置路由, 略
-6. 用postman测试 
-   - POST请求配置的路由,填好header, 选`form-data`进行测试
-   - key叫做image(serializer里配置的), type选`file`
+6. 用postman测试
+    - POST请求配置的路由,填好header, 选`form-data`进行测试
+    - key叫做image(serializer里配置的), type选`file`
    > 踩坑: 莫名其妙报错`PIL` module找不到, 也不知道哪里调用了, 总之, `pip install Pillow` 安装这个包即可
 
 7. 报错:找不到PIL模块? `pip install Pillow`
+8. 2个问题导致前端访问不到后端上传的图片
+    - 图片地址没有路由, 在主路由加上
+    ```python
+
+    from django.conf.urls.static import static
+    
+    urlpatterns = [
+    # 其他路由...
+    # 后面拼接上这句话(static里面有提示):
+    ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    ```
+   - 中间件拦住了
+   ```python
+    class LoginCheckMiddleware(MiddlewareMixin):
+    keyword = 'JWT'
+    def process_view(self, request, view_func, view_args, view_kwargs):
+        # 加上条件, path以为`/media/`开头的, 也允许不经jwt校验访问
+        if request.path == '/auth/login' or request.path.startswith(settings.MEDIA_URL):
+            # 具体代码...
+    ```
 
 - **代码可复用,建议保存**
 
@@ -1621,17 +1650,21 @@ MEDIA_URL = "/media/"
 
 1. 命令新建app staff(记得`settings.py`安装)
 2. 写好视图
+
 ```python
 from rest_framework.generics import ListAPIView
 from apps.oaauth.models import OADepartment
 from apps.oaauth.serializers import DepartmentSerializer
+
 
 # 直接继承 ListAPIView
 class DepartmentListView(ListAPIView):
     queryset = OADepartment.objects.all()
     serializer_class = DepartmentSerializer
 ```
+
 3. 注册路由
+
 > 踩坑! 记住,只有视图集才需要导入DefaultRouter后实例化, 注册, 拼接进`urlpatterns`
 
 - 像这种普通路由还是写在 urlpatterns 数组里

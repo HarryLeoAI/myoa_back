@@ -11,7 +11,7 @@ from django.contrib.auth.models import AnonymousUser
 class LoginCheckMiddleware(MiddlewareMixin):
     keyword = 'JWT'
     def process_view(self, request, view_func, view_args, view_kwargs):
-        if request.path == '/auth/login':
+        if request.path == '/auth/login' or request.path.startswith(settings.MEDIA_URL):
             request.user = AnonymousUser()
             request.auth = None
             return None

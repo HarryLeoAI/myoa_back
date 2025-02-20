@@ -1511,6 +1511,107 @@ return response.Response(serializer.data)
       2将表单数据写入数据库. 所以往往有外键的字段需要重写 create/update 方法,因为传过来的数据,比如 inform.departments
       它不只是一个由department.id 组成的列表, 而是department的全部信息, 所以前端我们要传过来的是department_ids,
       并且声明department只读不写, 这样前端过来的数据就只有department.id 组成的列表了
+### 图片上传
+
+> 前端已经建好了发布通知的页面, 集成了wangEditor富文本编辑器, 现在要实现wangEditor的图片上传功能
+
+1. 新建app image
+2. 创建序列化文件`serializers.py`, 该文件用于验证图片上传格式是否合规
+```python
+from rest_framework import serializers
+from django.core.validators import FileExtensionValidator, get_available_image_extensions
+
+
+class UploadImageSerializer(serializers.Serializer):
+    image = serializers.ImageField(
+        # 验证后缀名
+        validators=[FileExtensionValidator(['png', 'jpg', 'jpeg', 'gif'])],
+        # 配置提示信息
+        error_messages={'required': '请上传图片！', 'invalid_image': '请上传正确格式的图片！'}
+    )
+
+    def validate_image(self, value):
+        # 单位b, 1mb = 1024kb = 1024*1024b
+        # 配置文件最大的大小
+        max_size = 1 * 1024 * 1024
+        # 获取当前文件的大小
+        size = value.size
+        # 如果当前文件的大小 大于 最大值
+        if size > max_size:
+            # 抛出异常
+            raise serializers.ValidationError('图片最大不能超过1MB！')
+        
+        # 每个 validate_字段(self, value) 函数,都必须返回 value
+        return value
+```
+3. 编辑视图`views.py`
+```python
+from rest_framework.views import APIView
+from .serializers import UploadImageSerializer
+from rest_framework.response import Response
+from shortuuid import uuid # 导入uuid进行文件重命名防攻击
+import os # 导入os包,等会要用里面的一个函数获取文件后缀名
+from django.conf import settings # 导入配置项, 需要里面关于MEDIA的配置项
+
+
+class UploadImageView(APIView):
+    def post(self, request):
+        # 1, 验证数据
+        serializer = UploadImageSerializer(data=request.data)
+        if serializer.is_valid():
+            # 2, 如果验证通过
+            # 获取图片
+            file = serializer.validated_data.get('image')
+            # 配置名称
+            filename = uuid() + os.path.splitext(file.name)[-1]
+            # 配置存放地址
+            path = settings.MEDIA_ROOT / filename
+            try:
+                # 打开文件
+                with open(path, 'wb') as fp:
+                    # 文件循环数据流(file.chunks())
+                    for chunk in file.chunks():
+                        # 写入数据流到path
+                        fp.write(chunk)
+            except Exception:
+                # 写入过程中如果出现异常:
+                return Response({
+                    "errno": 1,
+                    "message": "图片保存失败！"
+                })
+            # 如果没有出现异常
+            return Response({
+                "errno": 0,
+                "data": {
+                    "url": settings.MEDIA_URL + filename,
+                    "alt": "图片",
+                    "href": settings.MEDIA_URL + filename
+                }
+            })
+        else:
+            # 如果验证没有通过序列化的验证
+            return Response({
+                "errno": 1,
+                "message": list(serializer.errors.values())[0][0]
+            })
+```
+> 视图return回去的JSON, 是按照wangEditor要求的格式!成功返回`'errno':0` + `data`(data.url必须, 其余可选), 失败返回`'errno':1` + `message`
+4. 编辑配置文件`settings.py`
+```python
+MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_URL = "/media/"
+```
+> 在根目录下新建`~/media/`文件夹,用于存放上传的图片
+
+5. 配置路由, 略
+6. 用postman测试 
+   - POST请求配置的路由,填好header, 选`form-data`进行测试
+   - key叫做image(serializer里配置的), type选`file`
+   > 踩坑: 莫名其妙报错`PIL` module找不到, 也不知道哪里调用了, 总之, `pip install Pillow` 安装这个包即可
+
+7. 报错:找不到PIL模块? `pip install Pillow`
+
+- **代码可复用,建议保存**
 
 # 员工管理模块
 

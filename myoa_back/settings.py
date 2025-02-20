@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'apps.oaauth',  # 用户
     'apps.absent',  # 考勤
     'apps.inform',  # 通知
+    'apps.staff',   # 员工
 ]
 
 MIDDLEWARE = [

@@ -1431,37 +1431,41 @@ class Command(BaseCommand):
 
 ```python
     def list(self, request, *args, **kwargs):
+
+
     queryset = self.get_queryset()
-    who = request.query_params.get('who')
-    if who and who == 'sub':
-        result = queryset.filter(responder=request.user)
-    else:
-        result = queryset.filter(requester=request.user)
+who = request.query_params.get('who')
+if who and who == 'sub':
+    result = queryset.filter(responder=request.user)
+else:
+    result = queryset.filter(requester=request.user)
 
-    # 分页
-    page = self.paginate_queryset(result)
-    if page is not None:
-        serializer = self.get_serializer(page, many=True)
-        return self.get_paginated_response(serializer.data)
+# 分页
+page = self.paginate_queryset(result)
+if page is not None:
+    serializer = self.get_serializer(page, many=True)
+    return self.get_paginated_response(serializer.data)
 
-    serializer = self.serializer_class(result, many=True)
-    return response.Response(serializer.data)
+serializer = self.serializer_class(result, many=True)
+return response.Response(serializer.data)
 ```
 
 > 分页配置中, page_size 的值务必和前端一致.
 
 # 通知模块
+
 ### 快速搭建api的工作流程
-1. 新建app `python manage.py startapp inform`
+
+1. 新建app `python manage.py startapp inform`(记得`settings.py`里安装)
 2. 新建模型,执行迁移(makemigration, migrate建表)
     - 模型文件知识点
     ```python
     class Meta:
-        ordering = ('字段名称', ) #依据哪个字段进行正序排序,倒序加负号-
+        ordering = ('字段名称', ) # 依据哪个字段进行正序排序,倒序加负号-
         unique_together = ('inform', 'user') # 哪几个字段组合起来是唯一的
     ```
 3. 配置序列化
-   - 序列化文件知识点
+    - 序列化文件知识点
    ```python
     # 前端只读: 其他序列化的数据拿过来嵌套, 交给前端时只可以读取
     # 前端只写: 前端传输数据到后端, 给本序列化创建数据时才用到(通常是外键id)
@@ -1475,18 +1479,24 @@ class Command(BaseCommand):
     - 导入`DefaultRouter`
     - 注册, 拼接
     - 在主路由中注册
+
 ### 断点调试
+
 - 建好后端逻辑后, 用postman进行测试排错, 使用post 方法访问该视图集接口新建数据.
-  - 当需要传入多条department_ids时, 不能写成一个列表, 而是写多个key为`department_ids`的input字段, 传过去自己会变成列表
-  - 访问出现错误, 开始尝试断点调试(停止正常服务, 开启debug模式, 打上断点, 意味着程序执行到断点时停止, 会显示当前内存空间里的变量究竟是什么样子, 点击下一步, 程序继续执行)
-- 问题处理一:`ids`还是字符串,是因为调用了map后没有把值重新赋给ids, 修改后的代码:`ids = list(map(lambda value: int(value), ids))`
-  - 执行匿名函数, 传入参数value, 返回int(value), 即将传入的参数转为整数类型
-  - map遍历可迭代对象, 接收两个参数(1是一个函数, 2是一个可迭代对象), 让可迭代对象里的每个值都去执行一次参数1传入的函数, 返回值是一个新的可迭代对象
-  - list将新的可迭代对象转为列表, 返回给ids
+    - 当需要传入多条department_ids时, 不能写成一个列表, 而是写多个key为`department_ids`的input字段, 传过去自己会变成列表
+    - 访问出现错误, 开始尝试断点调试(停止正常服务, 开启debug模式, 打上断点, 意味着程序执行到断点时停止,
+      会显示当前内存空间里的变量究竟是什么样子, 点击下一步, 程序继续执行)
+- 问题处理一:`ids`还是字符串,是因为调用了map后没有把值重新赋给ids,
+  修改后的代码:`ids = list(map(lambda value: int(value), ids))`
+    - 执行匿名函数, 传入参数value, 返回int(value), 即将传入的参数转为整数类型
+    - map遍历可迭代对象, 接收两个参数(1是一个函数, 2是一个可迭代对象), 让可迭代对象里的每个值都去执行一次参数1传入的函数,
+      返回值是一个新的可迭代对象
+    - list将新的可迭代对象转为列表, 返回给ids
 - 问题处理二: 报错发现`**validated_data`里面居然有`public`字段?
 - 原来是模型里给该字段设置了默认值, 调用序列化后, 就把这个字段带进来了
     - 解决方法1, 不设置默认值
-    - 解决方法2, 在序列化里声明该字段只读, 所以服务器传入数据->执行序列化后, 过来的对象还是没有public字段, public字段在下面的代码里再次赋值和保存
+    - 解决方法2, 在序列化里声明该字段只读, 所以服务器传入数据->执行序列化后, 过来的对象还是没有public字段,
+      public字段在下面的代码里再次赋值和保存
     ```python
     class Meta:
         model = Inform
@@ -1495,5 +1505,18 @@ class Command(BaseCommand):
         read_only_fields = ('public',)
     ```
 - 针对上面的问题再次捋一遍序列化的逻辑:
-  - 读取数据: 前端发起GET请求, 视图集通过queryset的配置调用指定模型, 获取相关数据后再根据serializer_class 对获取的数据进行序列化(转JSON), 这时候只写(write_only)就起作用了,它不会将声明为只写的字段添加进JSON串里
-  - 写入数据: 前端发起POST/PUT请求, 视图集还是执行相同逻辑, 序列化这时候扮演两个角色: 1将表单数据转换成指定格式并执行验证 2将表单数据写入数据库. 所以往往有外键的字段需要重写 create/update 方法,因为传过来的数据,比如 inform.departments 它不只是一个由department.id 组成的列表, 而是department的全部信息, 所以前端我们要传过来的是department_ids, 并且声明department只读不写, 这样前端过来的数据就只有department.id 组成的列表了
+    - 读取数据: 前端发起GET请求, 视图集通过queryset的配置调用指定模型, 获取相关数据后再根据serializer_class
+      对获取的数据进行序列化(转JSON), 这时候只写(write_only)就起作用了,它不会将声明为只写的字段添加进JSON串里
+    - 写入数据: 前端发起POST/PUT请求, 视图集还是执行相同逻辑, 序列化这时候扮演两个角色: 1将表单数据转换成指定格式并执行验证
+      2将表单数据写入数据库. 所以往往有外键的字段需要重写 create/update 方法,因为传过来的数据,比如 inform.departments
+      它不只是一个由department.id 组成的列表, 而是department的全部信息, 所以前端我们要传过来的是department_ids,
+      并且声明department只读不写, 这样前端过来的数据就只有department.id 组成的列表了
+
+# 员工管理模块
+
+### 返回所有部门数据的接口
+
+> 通知管理模块, 新建通知功能需要获取所有部门的数据, 其功能归属于staff模块
+
+1. 命令新建app staff(记得安装)
+2. 

@@ -1518,5 +1518,20 @@ return response.Response(serializer.data)
 
 > 通知管理模块, 新建通知功能需要获取所有部门的数据, 其功能归属于staff模块
 
-1. 命令新建app staff(记得安装)
-2. 
+1. 命令新建app staff(记得`settings.py`安装)
+2. 写好视图
+```python
+from rest_framework.generics import ListAPIView
+from apps.oaauth.models import OADepartment
+from apps.oaauth.serializers import DepartmentSerializer
+
+# 直接继承 ListAPIView
+class DepartmentListView(ListAPIView):
+    queryset = OADepartment.objects.all()
+    serializer_class = DepartmentSerializer
+```
+3. 注册路由
+> 踩坑! 记住,只有视图集才需要导入DefaultRouter后实例化, 注册, 拼接进`urlpatterns`
+
+- 像这种普通路由还是写在 urlpatterns 数组里
+- 最后的路由地址是`staff/departmtents/`

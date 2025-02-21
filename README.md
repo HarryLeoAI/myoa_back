@@ -1542,7 +1542,7 @@ class UploadImageSerializer(serializers.Serializer):
         if size > max_size:
             # 抛出异常
             raise serializers.ValidationError('图片最大不能超过1MB！')
-        
+
         # 每个 validate_字段(self, value) 函数,都必须返回 value
         return value
 ```
@@ -1630,7 +1630,7 @@ MEDIA_URL = "/media/"
     # 后面拼接上这句话(static里面有提示):
     ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     ```
-   - 中间件拦住了
+    - 中间件拦住了
    ```python
     class LoginCheckMiddleware(MiddlewareMixin):
     keyword = 'JWT'
@@ -1641,6 +1641,41 @@ MEDIA_URL = "/media/"
     ```
 
 - **代码可复用,建议保存**
+
+### 通知列表接口
+> 视图集已经完成了通知列表功能, 但其自带的有以下两个问题: 1没有分页, 2返回的是全部的通知功能,没有进行任何筛选
+
+1. 分页, 新建 `~/apps/inform/paginations.py`, 写好以后在视图层导入并在视图集声明`pagination_class = InformPagination`
+2. 筛选, 通过重写 **get_queryset(self)**, `~/apps/inform/views.py` 中的 `InformViewSet` 视图集:
+```python
+    def get_queryset(self):
+        """
+        ModelViewSet 视图集默认返回所有数据
+        虽然可以通过.objects.filter('筛选条件').all()进行简单筛选
+        但当逻辑过于复杂, 且需要进行多表多次查询时, 应该考虑重写get_queryset方法, 来实现更复杂数据库查询的逻辑
+
+        现在项目的需求是:
+        1, 查询时, 查找到相关的通知发布者的信息(数据库里的外键存的只是author_id, 而不是用户的全部信息): select_related()
+        2, 查询时, 通过多对多关系, 找到当前登录用户, 是否已读过本条通知: prefetch_related()
+        3, 查询时, 需要遵循以下逻辑:
+            3.1, 要么是公开的
+            3.2, 要么可见部门里有当前登录用户的所属部门
+            3.3, 要么通知的作者就是当前登录的用户
+        4. 最后不能用all(), 而是 distinct() 避免数据重复
+
+        这么做的原因是为了尽可能少地访问数据库
+        """
+        queryset = (self
+                    # 减少访问数据库: 提前找到通知发布者
+                    .queryset.select_related('author')
+                    # 减少访问数据库: 提前找到通知是否已读的相关信息
+                    .prefetch_related(Prefetch("been_read", queryset=InformRead.objects.filter(user_id=self.request.user.uid)), 'departments')
+                    # 筛选出来: 1是公开的, 2是通知可见部门里有用户所属部门的, 3是通知发布者是用户自己的 所有数据
+                    .filter(Q(public=True) | Q(departments=self.request.user.department) | Q(author=self.request.user))
+                    # .distinct() 是从数据库中获取不重复的记录
+                    .distinct())
+        return queryset
+```
 
 # 员工管理模块
 

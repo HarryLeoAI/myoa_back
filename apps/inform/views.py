@@ -1,6 +1,6 @@
 from rest_framework import viewsets,views
 from .models import Inform, InformRead
-from .serializers import InformSerializer,InformReadSerializer
+from .serializers import InformSerializer,ReadSerializer
 from django.db.models import Q
 from django.db.models import Prefetch
 from .paginations import InformPagination
@@ -57,7 +57,7 @@ class InformViewSet(viewsets.ModelViewSet):
 
 class InformReadView(views.APIView):
     def post(self, request):
-        serializer = InformReadSerializer(data=request.data)
+        serializer = ReadSerializer(data=request.data)
         if serializer.is_valid():
             inform_id = serializer.validated_data.get('inform_id')
             if InformRead.objects.filter(inform_id=inform_id, user_id=request.user.uid).exists():

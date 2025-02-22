@@ -1,7 +1,14 @@
-from rest_framework import serializers,exceptions
-from .models import Inform,InformRead
-from apps.oaauth.serializers import UserSerializer,DepartmentSerializer
+from rest_framework import serializers, exceptions
+from .models import Inform, InformRead
+from apps.oaauth.serializers import UserSerializer, DepartmentSerializer
 from apps.oaauth.models import OADepartment
+
+
+class InformReadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InformRead
+        fields = "__all__"
+
 
 class InformSerializer(serializers.ModelSerializer):
     author = UserSerializer(read_only=True)
@@ -9,6 +16,9 @@ class InformSerializer(serializers.ModelSerializer):
 
     # ids
     department_ids = serializers.ListField(write_only=True)
+    # reads
+    been_read = InformReadSerializer(many=True, read_only=True)
+
     class Meta:
         model = Inform
         fields = "__all__"
@@ -18,7 +28,7 @@ class InformSerializer(serializers.ModelSerializer):
         ids = validated_data.pop('department_ids')
         ids = list(map(lambda value: int(value), ids))
 
-        if len(ids)==0 :
+        if len(ids) == 0:
             raise exceptions.ValidationError('必须选择可见部门!')
 
         if 0 in ids:
@@ -31,7 +41,8 @@ class InformSerializer(serializers.ModelSerializer):
 
         return newInform
 
-class InformReadSerializer(serializers.Serializer):
+
+class ReadSerializer(serializers.Serializer):
     inform_id = serializers.IntegerField()
 
     def validate_inform_id(self, value):

@@ -1,5 +1,5 @@
-from rest_framework import serializers
-from .models import Inform, InformRead
+from rest_framework import serializers,exceptions
+from .models import Inform
 from apps.oaauth.serializers import UserSerializer,DepartmentSerializer
 from apps.oaauth.models import OADepartment
 
@@ -16,8 +16,11 @@ class InformSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         ids = validated_data.pop('department_ids')
-
         ids = list(map(lambda value: int(value), ids))
+
+        if len(ids)==0 :
+            raise exceptions.ValidationError('必须选择可见部门!')
+
         if 0 in ids:
             newInform = Inform.objects.create(public=True, author=self.context['request'].user, **validated_data)
         else:

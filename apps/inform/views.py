@@ -4,6 +4,8 @@ from .serializers import InformSerializer
 from django.db.models import Q
 from django.db.models import Prefetch
 from .paginations import InformPagination
+from rest_framework.response import Response
+from rest_framework import status
 
 class InformViewSet(viewsets.ModelViewSet):
     queryset = Inform.objects.all()
@@ -37,3 +39,11 @@ class InformViewSet(viewsets.ModelViewSet):
                     # .distinct() 是从数据库中获取不重复的记录
                     .distinct())
         return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.author.uid == request.user.uid:
+            self.perform_destroy(instance)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response(status=status.HTTP_401_UNAUTHORIZED)

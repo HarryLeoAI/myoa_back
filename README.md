@@ -1677,6 +1677,9 @@ MEDIA_URL = "/media/"
         return queryset
 ```
 
+### 通知删除接口
+> 视图集自带了删除方法, 但是逻辑不完善: 必须要判断通知的发布者(inform.author)是当前登录的用户(request.user), 所以必须重写`destroy()` 函数, 逻辑较为简单, 此处略.
+
 # 员工管理模块
 
 ### 返回所有部门数据的接口

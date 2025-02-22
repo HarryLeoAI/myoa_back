@@ -1,6 +1,6 @@
-from rest_framework import viewsets
+from rest_framework import viewsets,views
 from .models import Inform, InformRead
-from .serializers import InformSerializer
+from .serializers import InformSerializer,InformReadSerializer
 from django.db.models import Q
 from django.db.models import Prefetch
 from .paginations import InformPagination
@@ -47,3 +47,26 @@ class InformViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
         else:
             return Response(status=status.HTTP_401_UNAUTHORIZED)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer(instance)
+        data = serializer.data
+        data['been_read'] = InformRead.objects.filter(inform_id=instance.id).count()
+        return Response(data=data)
+
+class InformReadView(views.APIView):
+    def post(self, request):
+        serializer = InformReadSerializer(data=request.data)
+        if serializer.is_valid():
+            inform_id = serializer.validated_data.get('inform_id')
+            if InformRead.objects.filter(inform_id=inform_id, user_id=request.user.uid).exists():
+                return Response()
+            else:
+                try:
+                    InformRead.objects.create(inform_id=inform_id, user_id=request.user.uid)
+                except:
+                    return Response(status=status.HTTP_400_BAD_REQUEST)
+                return Response()
+        else:
+            return Response(data={'detail': list(serializer.errors.values())[0][0]}, status=status.HTTP_400_BAD_REQUEST)

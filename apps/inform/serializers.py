@@ -1,5 +1,5 @@
 from rest_framework import serializers,exceptions
-from .models import Inform
+from .models import Inform,InformRead
 from apps.oaauth.serializers import UserSerializer,DepartmentSerializer
 from apps.oaauth.models import OADepartment
 
@@ -30,3 +30,11 @@ class InformSerializer(serializers.ModelSerializer):
             newInform.save()
 
         return newInform
+
+class InformReadSerializer(serializers.Serializer):
+    inform_id = serializers.IntegerField()
+
+    def validate_inform_id(self, value):
+        if not Inform.objects.filter(pk=value).exists():
+            raise exceptions.ValidationError("这条通知不存在！")
+        return value

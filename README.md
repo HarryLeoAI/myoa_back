@@ -1676,6 +1676,27 @@ MEDIA_URL = "/media/"
                     .distinct())
         return queryset
 ```
+### 通知详情接口
+> 视图集已经帮我完成了这个详情页的接口, 但我需要更复杂的逻辑: 将阅读量交给前端
+1. 实现阅读量的自动增加: 点击通知详情, 底层获取通知详情的同时也自动请求接口, 增加一条阅读量数据
+   1. 接口在`~/apps/inform/views.py`中的`InformReadView`中
+   2. 数据序列化在`InformReadSerializer`中
+   
+   > 复习:想要针对某个字段进行更复杂的验证逻辑, `def validate_字段名(self, value):`, self是序列化自己, value就是被验证字段
+
+   3. 记得配置路由
+2. 想要在原始数据里面添加新的属性, 就需要重写视图集的`retrieve()`函数:
+```python
+def retrieve(self, request, *args, **kwargs):
+    instance = self.get_object()
+    serializer = self.get_serializer(instance)
+    # 先用一个变量接收
+    data = serializer.data
+    # 再往里面拼属性
+    data['been_read'] = InformRead.objects.filter(inform_id=instance.id).count()
+    # 最后返回给前端
+    return Response(data=data)
+```
 
 ### 通知删除接口
 > 视图集自带了删除方法, 但是逻辑不完善: 必须要判断通知的发布者(inform.author)是当前登录的用户(request.user), 所以必须重写`destroy()` 函数, 逻辑较为简单, 此处略.

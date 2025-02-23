@@ -181,3 +181,15 @@ AUTH_USER_MODEL = 'oaauth.OAUser'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': ['apps.oaauth.authentications.UserTokenAuthentication']
 }
+
+# smtp
+# 配置smtp服务
+smtp_config = ConfigParser()
+smtp_config.read(os.path.join(BASE_DIR, 'smtp.cnf'))
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_USE_TLS = True  # 如果你的SMTP服务需要TLS
+EMAIL_HOST = smtp_config.get('smtp', 'SMTP_HOST')
+EMAIL_PORT = smtp_config.getint('smtp', 'SMTP_PORT')  # 注意转换为整数
+EMAIL_HOST_USER = smtp_config.get('smtp', 'SMTP_USER')
+EMAIL_HOST_PASSWORD = smtp_config.get('smtp', 'SMTP_PASSWORD')
+DEFAULT_FROM_EMAIL = smtp_config.get('smtp', 'SMTP_DEFAULT_FROM_EMAIL')

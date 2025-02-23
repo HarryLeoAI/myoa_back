@@ -1735,3 +1735,19 @@ class DepartmentListView(ListAPIView):
 
 - 像这种普通路由还是写在 urlpatterns 数组里
 - 最后的路由地址是`staff/departmtents/`
+
+### 新建员工
+- 视图 `~apps/staff/views.py` 中新建 `StaffView` 接口, 继承`APIView`, 重写`post`方法
+- 前端传来数据`realname, email, telphone`, 用序列化 `CreateStaffSerializer(serializers.Serializer)` 进行校验, 同时重写 `validate(self, attrs)`函数, 在函数内部进行判断, 确保1邮箱不重复, 2发起新建员工请求的用户是其所属部门的领导
+- 配置路由
+- 注意:踩的2个大坑: 
+  - 1, 当视图接口**不是**模型视图集时候, 序列化类实例化后, 如果不这样传参数,`serializer = CreateStaffSerializer(data=request.POST, context={'request': request})`, 那么在序列化里, 是不能通过`self.context['request']`获取请求信息的
+  - 2, 踩了两次了! js写多了喜欢打逗号!
+  ```python
+    # ...
+    email = serializer.validated_data['email'], # 注意这个逗号, 它居然不会报错! 却会让 email 的数值类型变成元组!
+    realname = serializer.validated_data['realname'], # 这个逗号让我排了好久的错!
+    password = '111111'
+    # ...
+    ```
+  > 错误提示原文的标题: `AttributeError: 'tuple' object has no attribute 'strip'`

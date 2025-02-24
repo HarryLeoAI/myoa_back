@@ -1751,3 +1751,16 @@ class DepartmentListView(ListAPIView):
     # ...
     ```
   > 错误提示原文的标题: `AttributeError: 'tuple' object has no attribute 'strip'`
+### 发送激活邮件
+> 新建员工成功后, 发送激活邮件
+
+1. 采用 AES 加密被创建用户的邮箱
+> 代码参考`~/utils/aeser.py`
+> 踩坑, 最新版本的`Crypto`包安装命令是: `pip3 install pycryptodome`, 而不是`pip install pycrypto`, 原因是后者并不安全且不再维护.
+> 还需要装`VSC++14.X`以上的版本
+> 一开始我装成了`pycrypto`, 又没有卸载直接装了 `pycryptodome`, 最后导致还是找不到包, 需要把两个都卸载了再安装
+> 在遇到问题是,耐心使用AI工具进行排错
+2. 发送邮件时,将被加密的邮箱作为token参数拼接在url中
+3. 新接口`ActiveStaffView`的访问路由是`域名/staff/active/?token=第二步生成的token`
+    - 记得配置路由
+4. 新员工收到系统发送的邮件,点击链接,访问第三步生成的路由地址...

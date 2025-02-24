@@ -1756,11 +1756,221 @@ class DepartmentListView(ListAPIView):
 
 1. 采用 AES 加密被创建用户的邮箱
 > 代码参考`~/utils/aeser.py`
+> 
 > 踩坑, 最新版本的`Crypto`包安装命令是: `pip3 install pycryptodome`, 而不是`pip install pycrypto`, 原因是后者并不安全且不再维护.
+> 
 > 还需要装`VSC++14.X`以上的版本
+> 
 > 一开始我装成了`pycrypto`, 又没有卸载直接装了 `pycryptodome`, 最后导致还是找不到包, 需要把两个都卸载了再安装
 > 在遇到问题是,耐心使用AI工具进行排错
 2. 发送邮件时,将被加密的邮箱作为token参数拼接在url中
 3. 新接口`ActiveStaffView`的访问路由是`域名/staff/active/?token=第二步生成的token`
     - 记得配置路由
 4. 新员工收到系统发送的邮件,点击链接,访问第三步生成的路由地址...
+
+# Redis & Celery
+### Redis
+> Redis（Remote Dictionary Server）是一个开源的、高性能的 键值存储（Key-Value Store） 数据库，通常作为内存数据库使用。它广泛应用于缓存、会话存储、队列管理和实时数据处理等场景。
+> 说人话: 存储在内存中的数据库(内存运行速度 > 硬盘)类似缓存, 又比一般缓存(memcached)要牛一点, 能够设置定时备份数据到硬盘里
+ 
+> Redis官方没有提供Windows版本，也不推荐在Windows上使用。但是在开发阶段，我们还是有需求在windows上使用Redis的，这里讲解Redis 5版本在windows上安装教程，其他版本类似。
+
+- 下载.msi:<a href="https://github.com/tporadowski/redis/releases">下载地址</a>
+- 安装傻瓜式的:
+  - 建议不要改路径, 同页**添加Redis到系统环境变量中**
+  - 不要改端口, 同页**跨越windows防火墙**(防止无法使用)
+  - 建议不要设置最大存储空间
+  - 安装即可
+- 基本命令
+```
+# 进入本机redis命令
+redis-cli
+# 进入其他服务器的redis(先要确认 redis安装路径下/redis.windows-service.conf 里面声明的 ip地址, 默认: bind 127.0.0.1)
+redis-cli -h [ip] -p [端口]
+
+# 创建键值对
+set key value
+# 根据键删除键值对
+del key
+# 根据键设置该键值对的过期时间, x秒后过期
+expire key x
+# 创建键值对的同时设置过期时间
+setex key timeout x
+# 查看过期时间
+ttl key
+# 查看redis里现在存储的所有key
+keys *
+
+# 列表新增元素: 如果key不存在,则会新建一个列表,并在列表最前面加入元素value
+lpush key value
+# 列表新增元素: 在列表最后面增加元素
+rpush key value
+# 查看列表这个区间的元素
+lrange key start stop
+# 删除列表同样
+del key
+
+# 集合操作:创建集合,以setName为名创建一个集合, 里面以下值(v1 v2)
+sadd setName v1 v2
+# 删除集合里面的值
+srem setName v2
+# 查看集合里面有几个元素
+scard team1
+# 求两个集合的交集
+sinter set1 set2
+# 求两个集合的并集
+sunion set1 set2
+# 获取多个集合的差集
+sdiff set1 set2
+
+# 哈希操作: 设置hash值
+hset key field value
+# 获取hash值(获取value)
+hget key field
+# 删除
+hdel key field
+# 获取某个hash_key里的全部field和value
+hgetall key
+# 获取field
+hkeys key
+# 获取全部key
+hvals key
+# 判断某个哈希里面是否有某个field
+hexists key field
+# 根据field获取键值对
+hlen field
+
+# 事务(开启后里面的命令要么全部正确执行, 如果有错, 则全部不执行并回滚数据到执行前)
+# 开启事务
+multi
+# ... 编写你的命令后, exec正式执行
+exec
+# 取消, 回到multi前
+discard
+# 监视一个(或多个)key，如果在事务执行之前这个(或这些) key被其他命令所改动，那么事务将被打断。
+watch key...
+# 取消监听
+unwatch
+
+# 消息订阅功能 给某个频道发送消息
+publish channel message
+# 订阅某个频道
+subscribe channel
+
+# ...
+```
+
+### celery
+- 应用场景:
+  1. 大规模数据处理：Celery可以将一个大任务分解为多个小任务，这些小任务可以在多个工作者或服务器之间进行分发和处理。这使Celery特别适合大数据和机器学习等需要大规模并行处理的应用。
+  2. 异步任务：Celery可以进行异步任务处理，例如发送邮件、推送通知、执行定期任务等，这些任务可以在未来的某个时间点执行，而不会阻塞主程序或应用程序。
+  3. 定时任务：Celery还可以用于处理周期性任务，比如每天或每周定时执行的任务。这在许多web应用中都有广泛的应用，如数据分析、系统监控等
+- 工作原理:在Celery中，主要有三个组件，分别是生产者（Producer）、消费者（Worker）和消息队列（Broker）。
+  - 生产者：向消息队列发送任务的部分，通常是主应用程序（Django项目），比如我们的代码中生产了一个发送邮件的任务。
+  - 消息队列：也被称为Broker，是一个在生产者和消费者之间传递消息的中介。当生产者发送一个任务时，这个任务将被放入消息队列中，等待消费者来取出并执行。一般使用Redis、RabbitMQ来作为消息队列。
+  - 消费者：也就是我们通常所说的Worker，是从消息队列中取出任务并执行的部分。在Celery中，可以有多个Worker同时工作，每个Worker可以运行在不同的服务器或进程中，以实现任务的并行处理。
+  > 脑部某些购物狂欢节: 客户下单买了商品, 其实商品还没进入系统后台订单中, 也没有立刻给经销商通知, 但是返回给客户的是已经购买成功, 其实这个购买的请求还在任务队列中, 等到前面的购买请求处理完了轮到这条请求时再处理:通知经销商, 生成真正的后台订单记录等等...(因为买东西的人太多了, 等到一个一个按顺序处理发起的购买请求, 客户得等到猴年马月, 所以客户下单直接告诉他你已经购买成功了)
+
+- 安装: `pip install -U "celery[redis]"` (安装celery同时安装python操作redis的驱动程序)
+- windows下想要启动celery 还需要安装 G_event: `pip install gevent`
+
+### 正式投入使用:异步发送邮件
+1. 在 `settings.py` 中配置好 celery
+```python
+# celery配置
+# 中间人的配置
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/1'
+# 指定结果的接受地址(不能和上面一样, 所以地址为/2)
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/2'
+# 指定任务序列化方式（默认是json），可选择有：json、yaml、pickle、msgpack
+CELERY_TASK_SERIALIZER = 'json'
+# 指定结果序列化方式（默认是json）
+CELERY_RESULT_SERIALIZER = 'json'
+```
+2. 新建 `~/myoa_back/celery.py`, 代码可复用,建议保存
+```python
+import os
+from celery import Celery
+from celery.signals import after_setup_logger
+import logging
+
+# 设置django的settings模块，celery会读取这个模块中的配置信息
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'myoa_back.settings')
+
+app = Celery('myoa_back')
+
+## 日志管理
+@after_setup_logger.connect
+def setup_loggers(logger, *args, **kwargs):
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+    # add filehandler
+    fh = logging.FileHandler('logs.log')
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
+
+# 配置从settins.py中读取celery配置信息，所有Celery配置信息都要以CELERY_开头
+app.config_from_object('django.conf:settings', namespace='CELERY')
+
+# 自动发现任务，任务可以写在app/tasks.py中, 注意必须要确保app在settings.py中已经被安装
+app.autodiscover_tasks()
+
+# 测试任务
+# bind=True, 在任务函数中, 第一个参数就是任务对象
+# 如果bind=False, 或没有声明本参数, 那么任务函数中就没有该对象(下面的debug_task(self为空))
+# ignore_result=True, 忽略任务执行结果
+@app.task(bind=True, ignore_result=True)
+def debug_task(self):
+    print(f'Request: {self.request!r}')
+```
+3. 编辑 `~/myoa_back/__init__.py` 使项目启动时, 就启动celery
+```python
+# 导入当前目录下的 celery.app
+from .celery import app as celery_app
+
+# 类似于 js 的 export
+__all__ = ('celery_app',)
+```
+4. 新建 `~/apps/staff/tasks.py`, 意为任务
+```python
+from myoa_back import celery_app
+from django.core.mail import EmailMultiAlternatives
+from django.conf import settings
+
+# 定义了一个名叫 send_mail_task 的任务
+@celery_app.task(name="send_mail_task")
+# 这个任务执行 send_mail_task 函数, 接收3个参数: 邮箱地址, 真实姓名, 激活链接地址
+def send_mail_task(email, realname, active_url):
+    # 配置邮箱内容
+    subject = f"欢迎加入我们, {realname}!"
+    from_email = settings.DEFAULT_FROM_EMAIL
+    to_email = email
+    html_content = f"""
+            <html>
+              <body>
+                <h1>欢迎入职本公司!</h1>
+                <p>您所属部门领导已为您创建好了OA系统账号,</p>
+                <p><a href="{active_url}">请点击本链接进行账号激活!</a></p>
+                <br>
+                <p>如果上方链接无法正确访问? 请自行复制和粘贴下方链接到浏览器地址栏中手动打开!</p>
+                <p>{active_url}</p>
+              </body>
+            </html>
+            """
+
+    # 发送邮件
+    email_sender = EmailMultiAlternatives(
+        subject=subject,
+        body="",
+        from_email=from_email,
+        to=[to_email],
+    )
+    email_sender.attach_alternative(html_content, "text/html")
+    email_sender.send()
+```
+5. 修改 `~/apps/staff/views.py` 里的 `StaffView.send_active_email()` 方法, 这个函数只做两件事:
+   - 拼好 active_url
+   - 调用 tasks.py 里写好的异步任务函数: `send_mail_task.delay(email, realname, active_url)` (记得代码最上方导入)
+6. 启动celery服务, 再次使用postman进行创建用户的测试` celery -A myoa_back worker -l INFO -P gevent`
+7. 测试后发现多了个 `logs.log` 文件, 用于记录celery执行的日志, 可以忽略追踪

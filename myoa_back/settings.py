@@ -193,3 +193,13 @@ EMAIL_PORT = smtp_config.getint('smtp', 'SMTP_PORT')  # 注意转换为整数
 EMAIL_HOST_USER = smtp_config.get('smtp', 'SMTP_USER')
 EMAIL_HOST_PASSWORD = smtp_config.get('smtp', 'SMTP_PASSWORD')
 DEFAULT_FROM_EMAIL = smtp_config.get('smtp', 'SMTP_DEFAULT_FROM_EMAIL')
+
+# celery配置
+# 中间人的配置
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/1'
+# 指定结果的接受地址
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/2'
+# 指定任务序列化方式（默认是json），可选择有：json、yaml、pickle、msgpack
+CELERY_TASK_SERIALIZER = 'json'
+# 指定结果序列化方式（默认是json）
+CELERY_RESULT_SERIALIZER = 'json'

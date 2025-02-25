@@ -2033,3 +2033,80 @@ class ActiveStaffView(View):
 3. 视图静态页面`~/templates/active.html`, 交给ai
 4. 处理中间件(整个白名单吧, 现在登录接口, 激活页面, wangEditor上传的图片都不需要登录认证): `if request.path.startswith(settings.MEDIA_URL) or request.path in WhiteList.path: #设置匿名用户, 跳过中间件 return None`
 5. 规范编码, 编辑`settings.py`, 配置前端域名`settings.FRONTEND_URL`: `FRONTEND_URL = "http://localhost:5173/#"`
+
+### 员工列表
+> 细想之下, 关于员工的视图, 我有新增, 修改(状态), 列表三个功能需要实现, 所以不如直接把这个视图接口改造成视图集
+- 源代码
+```python
+# 通过继承, 删减掉删除(mixins.DestroyModelMixin)功能
+class StaffViewSet(mixins.CreateModelMixin, 
+                mixins.UpdateModelMixin,
+                mixins.ListModelMixin,
+                viewsets.GenericViewSet):
+    
+    # 配置模型
+    queryset = OAUser.objects.all()
+    
+    # 配置序列化类: 重点,本视图集涉及两个序列化类: 
+    # 1, 新增员工时, 是CreateStaffSerializer序列化验证器
+    # 2, 查询列表时, 是apps.oaauth.serializers.Userserializer类
+    def get_serializer_class(self):
+        if self.request.method == 'GET':
+            return UserSerializer
+        else:
+            return CreateStaffSerializer
+    
+    # 3, 配置分页: 当前目录下的 paginations.UserPagination, 略
+    pagination_class = UserPagination
+    
+    # 这个是发送邮件的函数, 略
+    def send_active_email(self, email, realname):
+        # 处理 AES 加密
+        token = aes.encrypt(email)
+        active_path = reverse("staff:active") + "?" + parse.urlencode({"token": token})
+        active_url = self.request.build_absolute_uri(active_path)
+
+        # 异步发送邮件
+        send_mail_task.delay(email, realname, active_url)
+    
+    # 新增员工: 重写 mixins.CreateModelMixin.craete()
+    def create(self, request, *args, **kwargs):
+        serializer = CreateStaffSerializer(data=request.data, context={'request': request})
+        if serializer.is_valid():
+            email = serializer.validated_data['email']
+            realname = serializer.validated_data['realname']
+            password = '111111'
+            telphone = serializer.validated_data['telphone']
+            department_id = request.user.department.id
+
+            # 创建用户
+            user = OAUser.objects.create_user(email=email, realname=realname, password=password, telphone=telphone,
+                                              department_id=department_id)
+
+            # 发送邮件
+            self.send_active_email(email, user.realname)
+
+            return Response(data={'detail': '用户创建成功'}, status=status.HTTP_201_CREATED)
+        else:
+            return Response(data={'detail': list(serializer.errors.values())[0][0]}, status=status.HTTP_400_BAD_REQUEST)
+    
+    # 通过配置 get_queryset() 实现员工列表筛选
+    def get_queryset(self):
+        queryset = self.queryset
+        user = self.request.user
+        
+        # 如果不是董事会的
+        if user.department.name != '董事会':
+            # 也不是本部门的领导
+            if user.uid != user.department.leader.uid:
+                # 那就报错(只有部门领导和董事会成员可以查看员工列表)
+                raise exceptions.PermissionDenied()
+            else:
+                # 是部门领导, 则仅返回本部的员工列表
+                queryset = queryset.filter(department_id=user.department_id)
+        
+        # 以加入时间倒序排序
+        return queryset.order_by("-date_joined").all()
+```
+- **视图集路由都必须注册**, 其他路由加上`staff/`
+- 总路由删除前面的`staff`

@@ -1972,5 +1972,64 @@ def send_mail_task(email, realname, active_url):
 5. 修改 `~/apps/staff/views.py` 里的 `StaffView.send_active_email()` 方法, 这个函数只做两件事:
    - 拼好 active_url
    - 调用 tasks.py 里写好的异步任务函数: `send_mail_task.delay(email, realname, active_url)` (记得代码最上方导入)
-6. 启动celery服务, 再次使用postman进行创建用户的测试` celery -A myoa_back worker -l INFO -P gevent`
+6. 启动celery服务, 再次使用postman进行创建用户的测试 `celery -A myoa_back worker -l INFO -P gevent`
 7. 测试后发现多了个 `logs.log` 文件, 用于记录celery执行的日志, 可以忽略追踪
+8. 前端完成后再次测试, 发现视图层取不到前端传来的数据, 原来是代码写错了, DRF.APIView不再通过`request.POST`获取数据, 而是`serializer = CreateStaffSerializer(data=request.data, context={'request': request})`
+
+### 员工激活
+> 前面已经完成了: 部门直属领导有权新建员工, 通过创建时输入的邮箱给员工异步发送激活邮件, 现在处理是员工获得邮件后, 进行激活的工作
+
+1. 改个小坑: 使用AES加密后的邮件, 会变成一串复杂的字符串, 但这个字符串存在编码问题, 比如`+`会被当成字符串拼接运算符, 所以修改代码
+   - 导入parse(来自python自己的路由库urllib): `from urllib import parse`
+   - 编码添加给路由添加参数:`?token=xxxxxxxxx`, 代码: `active_path = reverse("staff:active") + "?" + parse.urlencode({"token": token})`
+2. 开始实现后台激活方法:
+   - `GET`逻辑: 员工访问邮件所提供的链接, 也就是带AES加密token后的激活路由, 会访问到`ActiveStaffView`, 在这个视图的`GET`请求中, 使用django自带的DTL模板渲染一个激活页面(这么做是因为接下来要在服务器端操作cookie), 页面渲染完成前, 将token以cookie的形式存入浏览器中.
+   - `POST`逻辑: 员工输入自己的邮箱, `POST`请求相同的路由, 接收表单传递的email, 比对cookie里的token解码后的email, 确认两者相等, 更新用户状态, 跳转到前端页面
+```python
+class ActiveStaffView(View):
+    def get(self, request):
+        # 获取地址里的token
+        token = request.GET.get('token')
+        
+        # 创建response对象
+        response = render(request, 'active.html')
+        # 给对象存入cookie, key为token value为地址里token的值(AES加密后的用户邮箱)
+        response.set_cookie('token', token)
+        
+        # 返回给前端渲染页面
+        return response
+    
+    def post(self, request):
+        # 获取cookie里的token
+        token = request.COOKIES.get('token')
+        # 如果没有, 禁止用户直接访问本页面
+        if not token:
+            return HttpResponseForbidden("缺少令牌，禁止访问")
+        
+        try:
+            # 尝试解码token, 还原为用户的email
+            email = aes.decrypt(token)
+            # 比对用户输入的email 和 解码后的email, 如果不相等
+            if email != request.POST.get('email'):
+                # 返回403
+                return HttpResponseForbidden("无效令牌，禁止访问")
+            
+            # 两者相等后, 再从数据库获取user
+            user = OAUser.objects.get(email=email)
+            # 必须是"未激活"的用户才可以被激活, "被锁定", "已激活"的禁止访问
+            if user.status != UserStatusChoices.UNACTIVED:
+                return HttpResponseForbidden("用户状态无效，禁止访问")
+
+            # 更新用户状态并保存
+            user.status = UserStatusChoices.ACTIVED
+            user.save()
+            # 重定向到前端并且添加路由参数 from=back
+            return HttpResponseRedirect(str(settings.FRONTEND_URL + "/login/?from=back"))
+        
+        # 当try的过程中出现其他错误时:
+        except:
+            return HttpResponseForbidden("系统错误，请联系管理员")
+```
+3. 视图静态页面`~/templates/active.html`, 交给ai
+4. 处理中间件(整个白名单吧, 现在登录接口, 激活页面, wangEditor上传的图片都不需要登录认证): `if request.path.startswith(settings.MEDIA_URL) or request.path in WhiteList.path: #设置匿名用户, 跳过中间件 return None`
+5. 规范编码, 编辑`settings.py`, 配置前端域名`settings.FRONTEND_URL`: `FRONTEND_URL = "http://localhost:5173/#"`

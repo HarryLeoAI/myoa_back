@@ -203,3 +203,6 @@ CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/2'
 CELERY_TASK_SERIALIZER = 'json'
 # 指定结果序列化方式（默认是json）
 CELERY_RESULT_SERIALIZER = 'json'
+
+# 前端域名(用于激活后跨域重定向跳转)
+FRONTEND_URL = "http://localhost:5173/#"

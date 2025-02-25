@@ -8,10 +8,16 @@ from .models import OAUser
 from django.http.response import JsonResponse
 from django.contrib.auth.models import AnonymousUser
 
+class WhiteList:
+    path = [
+        '/auth/login',
+        '/staff/active/',
+    ]
+
 class LoginCheckMiddleware(MiddlewareMixin):
     keyword = 'JWT'
     def process_view(self, request, view_func, view_args, view_kwargs):
-        if request.path == '/auth/login' or request.path.startswith(settings.MEDIA_URL):
+        if request.path.startswith(settings.MEDIA_URL) or request.path in WhiteList.path:
             request.user = AnonymousUser()
             request.auth = None
             return None

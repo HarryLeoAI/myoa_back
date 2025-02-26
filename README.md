@@ -2185,14 +2185,14 @@ def update(self, request, *args, **kwargs):
                 raise exceptions.PermissionDenied()
             else:
                 queryset = queryset.filter(department_id=request.user.department_id)
+        else:   
+            # 进行真名筛选
+            if realname != '':
+                queryset = queryset.filter(realname=request.query_params.get('realname'))
         
         # 进行部门筛选
         if department_id > 0:
             queryset = queryset.filter(department_id=department_id)
-        
-        # 进行真名筛选
-        if realname != '':
-            queryset = queryset.filter(realname=request.query_params.get('realname'))
         
         # 进行时间筛选
         if date_range:

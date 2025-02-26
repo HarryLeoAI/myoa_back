@@ -116,9 +116,9 @@ class StaffViewSet(mixins.CreateModelMixin,
                 raise exceptions.PermissionDenied()
             else:
                 queryset = queryset.filter(department_id=request.user.department_id)
-
-        if department_id > 0:
-            queryset = queryset.filter(department_id=department_id)
+        else:
+            if department_id > 0:
+                queryset = queryset.filter(department_id=department_id)
 
         if realname != '':
             queryset = queryset.filter(realname=request.query_params.get('realname'))

@@ -67,7 +67,7 @@ class StaffViewSet(mixins.CreateModelMixin,
 
     queryset = OAUser.objects.all()
     def get_serializer_class(self):
-        if self.request.method == 'GET':
+        if self.request.method in ['GET', 'PUT']:
             return UserSerializer
         else:
             return CreateStaffSerializer
@@ -112,4 +112,8 @@ class StaffViewSet(mixins.CreateModelMixin,
             else:
                 queryset = queryset.filter(department_id=user.department_id)
         return queryset.order_by("-date_joined").all()
+
+    def update(self, request, *args, **kwargs):
+        kwargs['partial'] = True
+        return super().update(request, *args, **kwargs)
 

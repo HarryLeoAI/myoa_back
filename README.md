@@ -2110,3 +2110,52 @@ class StaffViewSet(mixins.CreateModelMixin,
 ```
 - **视图集路由都必须注册**, 其他路由加上`staff/`
 - 总路由删除前面的`staff`
+
+### 员工锁定
+1. 实现逻辑:重写`StaffViewSet.update()`方法, 原方法调用 UserSerializer 的 update 方法, 实现状态修改
+2. 解析原`mixins.UpdateModelMixin.update`:
+```python
+class UpdateModelMixin:
+    """
+    Update a model instance.
+    """
+    def update(self, request, *args, **kwargs):
+        # 是否允许传入部分参数而非整个对象进行修改, 默认不允许
+        partial = kwargs.pop('partial', False)
+        # 获取修改的模型
+        instance = self.get_object()
+        # 获取指定的序列化
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        # 如果验证通过
+        serializer.is_valid(raise_exception=True)
+        # 调用下面的函数存储数据
+        self.perform_update(serializer)
+
+        if getattr(instance, '_prefetched_objects_cache', None):
+            # If 'prefetch_related' has been applied to a queryset, we need to
+            # forcibly invalidate the prefetch cache on the instance.
+            instance._prefetched_objects_cache = {}
+
+        return Response(serializer.data)
+
+    def perform_update(self, serializer):
+        # 序列化对象.存储() => 保存数据到数据库中
+        serializer.save()
+```
+3. 所以我们重写需要: 1, 指定正确的序列化; 2,允许传入部分参数(只传状态), `~/apps/staff/views.py中`
+```python
+def get_serializer_class(self):
+    # 如果是 GET, PUT 两种请求方式, 那么使用 UserSerializer 序列化类
+    if self.request.method in ['GET', 'PUT']:
+        return UserSerializer
+    # 否则就是POST新增员工, 使用 CreateStaffSerializer 序列化类
+    else:
+        return CreateStaffSerializer
+
+# ...
+
+def update(self, request, *args, **kwargs):
+    kwargs['partial'] = True # 允许传入部分参数(给关键字参数配置一个新的,key为partial, 值为True的字段)
+    return super().update(request, *args, **kwargs) #调用父类的update方法,传入kwargs
+```
+4. 去前端实现PUT请求本接口: `.../staff/<staff.uid>`, 传入数据`{status: 3}`

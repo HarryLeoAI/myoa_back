@@ -17,6 +17,7 @@ from apps.oaauth.models import UserStatusChoices
 from rest_framework import viewsets, mixins, exceptions
 from apps.oaauth.serializers import UserSerializer
 from .paginations import UserPagination
+from datetime import datetime
 
 OAUser = get_user_model()
 aes = aeser.AESCipher(settings.SECRET_KEY)
@@ -105,12 +106,31 @@ class StaffViewSet(mixins.CreateModelMixin,
 
     def get_queryset(self):
         queryset = self.queryset
-        user = self.request.user
-        if user.department.name != '董事会':
-            if user.uid != user.department.leader.uid:
+        request = self.request
+        department_id = int(request.query_params.get('department_id'))
+        realname = str(request.query_params.get('realname'))
+        date_range = request.query_params.getlist('date_range[]')
+
+        if request.user.department.name != '董事会':
+            if request.user.uid != request.user.department.leader.uid:
                 raise exceptions.PermissionDenied()
             else:
-                queryset = queryset.filter(department_id=user.department_id)
+                queryset = queryset.filter(department_id=request.user.department_id)
+
+        if department_id > 0:
+            queryset = queryset.filter(department_id=department_id)
+
+        if realname != '':
+            queryset = queryset.filter(realname=request.query_params.get('realname'))
+
+        if date_range:
+            try:
+                start_date = datetime.strptime(date_range[0], "%Y-%m-%d")
+                end_date = datetime.strptime(date_range[1], "%Y-%m-%d")
+                queryset = queryset.filter(date_joined__range=(start_date, end_date))
+            except Exception:
+                pass
+
         return queryset.order_by("-date_joined").all()
 
     def update(self, request, *args, **kwargs):

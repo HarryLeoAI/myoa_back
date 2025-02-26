@@ -2104,6 +2104,7 @@ class StaffViewSet(mixins.CreateModelMixin,
             else:
                 # 是部门领导, 则仅返回本部的员工列表
                 queryset = queryset.filter(department_id=user.department_id)
+                
         
         # 以加入时间倒序排序
         return queryset.order_by("-date_joined").all()
@@ -2159,3 +2160,56 @@ def update(self, request, *args, **kwargs):
     return super().update(request, *args, **kwargs) #调用父类的update方法,传入kwargs
 ```
 4. 去前端实现PUT请求本接口: `.../staff/<staff.uid>`, 传入数据`{status: 3}`
+
+### 员工列表筛选
+> 根据部门, 真实姓名, 加入时间进行筛选
+
+- 重写 `~/apps/staff/views.py`的 `StaffViewSet.get_queryset()`实现
+```python
+    def get_queryset(self):
+        # 获取初始的queryset
+        queryset = self.queryset
+        # 获取request信息
+        request = self.request
+        # 获取传入的部门id: request.query_params.get('key')
+        department_id = int(request.query_params.get('department_id'))
+        # 获取传入的真实姓名
+        realname = str(request.query_params.get('realname'))
+        # 获取传入的时间, 是一个数组: key[] = v1 & key[] = v2, 所以要用 .getlist('key[]') 获取
+        date_range = request.query_params.getlist('date_range[]')
+        
+        # 董事会筛选
+        if request.user.department.name != '董事会':
+            # 判断是否是非董事会的部门领导
+            if request.user.uid != request.user.department.leader.uid:
+                raise exceptions.PermissionDenied()
+            else:
+                queryset = queryset.filter(department_id=request.user.department_id)
+        
+        # 进行部门筛选
+        if department_id > 0:
+            queryset = queryset.filter(department_id=department_id)
+        
+        # 进行真名筛选
+        if realname != '':
+            queryset = queryset.filter(realname=request.query_params.get('realname'))
+        
+        # 进行时间筛选
+        if date_range:
+            try:
+                # 调用 python.datetime.datime.strptime() 删除, 将参数1传入的时间变为参数2指定的格式, 返回值是一个python.datetime对象
+                start_date = datetime.strptime(date_range[0], "%Y-%m-%d")
+                end_date = datetime.strptime(date_range[1], "%Y-%m-%d")
+                # 查询 date_joined__range=(起始时间, 结束时间)
+                # 相当于 "SELECT...WHERE date_joined BETWEEN 起始时间 AND 结束时间"
+                queryset = queryset.filter(date_joined__range=(start_date, end_date))
+            except Exception:
+                # 如果出现异常, 不做任何操作, 正常查询(防止传入时间超过当前时间)
+                pass
+
+        return queryset.order_by("-date_joined").all()
+```
+- 重点
+  - 获取url参数(?key=xxx): `self.request.query_params.get('key')`
+  - 获取url列表形式的参数(?key[]=x&key[]=y): `self.request.query_params.get('key[]')`
+  - 查询筛选一个时间段: `.filter(字段名__range=(起始范围, 结束范围))`, 对应SQL语言: `...WHERE 字段名 BETWEEN 起始 AND 结束`

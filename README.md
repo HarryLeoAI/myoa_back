@@ -2213,3 +2213,76 @@ def update(self, request, *args, **kwargs):
   - 获取url参数(?key=xxx): `self.request.query_params.get('key')`
   - 获取url列表形式的参数(?key[]=x&key[]=y): `self.request.query_params.get('key[]')`
   - 查询筛选一个时间段: `.filter(字段名__range=(起始范围, 结束范围))`, 对应SQL语言: `...WHERE 字段名 BETWEEN 起始 AND 结束`
+
+### 员工列表下载
+> 后端处理: 前端选中员工, 点击下载(传入参数), 根据参数获取数据, 然后处理成Excel文件, 把Excel带进响应对象里, 交给前端
+- 首先需要借用 `pandas` 包: `pip install pandas`
+- 同时有个坑, 就是需要下载另外一个包才能把数据写进响应里: `pip install pandas openpyxl`
+- 源代码
+```python
+# 引入pands包, 别名pd
+import pandas as pd
+
+class StaffDownloadView(APIView):
+    def get(self, request):
+        # 获取员工数据(未筛选前)
+        queryset = OAUser.objects.all()
+        # 获取传入的id, 要求传入的格式是 ids=[uid, uid, uid]
+        ids = request.query_params.get('ids')
+
+        try:
+            # 这时候是 '[]' 不是 [], 是个两头带中括号的字符串不是列表, 转成列表
+            ids = json.loads(ids)
+        except:
+            return Response(data={'detail': '员工参数错误!'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # 执行判断, 既不隶属于董事会, 又不是本部门的领导
+            if request.user.department.name != '董事会':
+                if request.user.uid != request.user.department.leader.uid:
+                    # 那就报错
+                    raise exceptions.PermissionDenied()
+                else:
+                    # 如果仅不是董事会的, 就进行初步筛选: 本部领导可以读取所属部门的职员的信息
+                    queryset = queryset.filter(department_id=request.user.department.id)
+            
+            # 进一步筛选: 筛选出pk, 即uid在 ids里的数据
+            queryset = queryset.filter(pk__in=ids)
+            
+            # 处理数据: 只需要这些字段:
+            result = queryset.values("realname", "email", "telphone", "department__name", "date_joined", "status")
+            
+            # 重点:调用 pandas 包的 数据流函数, 将结果转为数据流
+            staff_df = pd.DataFrame(list(result)) # 这里list(result)会直接强制让queryset生效并转为列表(一般queryset要return 出去的时候才会真正访问数据库)
+            # 处理status , 123转对应中文
+            status_mapping = {1: "已激活", 2: "待激活", 3: "已锁定"}
+            staff_df["status"] = staff_df["status"].map(status_mapping)
+            
+            # 重命名列头
+            staff_df = staff_df.rename(columns={
+                "realname": "真实姓名",
+                "email": "电子邮箱",
+                "telphone": "联系电话",
+                "department__name": "所属部门",
+                "date_joined": "入职时间",
+                "status": "当前状态"
+            })
+            
+            # 创建response对象, 指定内容类型为 xlsx
+            response = HttpResponse(content_type='application/xlsx')
+            # 配置响应信息, 是附件attachment形式
+            # (普通是inline形式, 也就是告诉浏览器响应是需要被你渲染的, 而attachment是附件是需要你浏览器进行下载的)
+            # filename是指定下载文件的名称
+            response['content-Disposition'] = "attachment; filename=员工信息.xlsx"
+            
+            # 写入数据到响应中
+            with pd.ExcelWriter(response) as writer:
+                staff_df.to_excel(writer, sheet_name='员工信息')
+                
+            # 返回响应
+            return response
+        except Exception as e:
+            return Response(data={'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+```
+- 配置路由, 略
+- 代码可复用, 保存

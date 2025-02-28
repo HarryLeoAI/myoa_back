@@ -10,5 +10,6 @@ router.register('staff', viewset=views.StaffViewSet, basename='staff')
 urlpatterns = [
     path('staff/departmtents/', views.DepartmentListView.as_view(), name="department"),
     path('staff/active/', views.ActiveStaffView.as_view(), name="active"),
-    path('staff/download/', views.StaffDownloadView.as_view(), name="download")
+    path('staff/download/', views.StaffDownloadView.as_view(), name="download"),
+    path('staff/upload/', views.StaffUploadView.as_view(), name="upload")
 ] + router.urls

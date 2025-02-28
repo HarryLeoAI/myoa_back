@@ -22,12 +22,22 @@ from apps.oaauth.serializers import DepartmentSerializer
 from apps.oaauth.serializers import UserSerializer
 from utils import aeser
 from .paginations import UserPagination
-from .serializers import CreateStaffSerializer
+from .serializers import CreateStaffSerializer, StaffUploadSerializer
 from .tasks import send_mail_task
+from django.db import transaction
 
 OAUser = get_user_model()
 aes = aeser.AESCipher(settings.SECRET_KEY)
 
+
+def send_active_email(request, email, realname):
+    # 处理 AES 加密
+    token = aes.encrypt(email)
+    active_path = reverse("staff:active") + "?" + parse.urlencode({"token": token})
+    active_url = request.build_absolute_uri(active_path)
+
+    # 异步发送邮件
+    send_mail_task.delay(email, realname, active_url)
 
 class ActiveStaffView(View):
     def get(self, request):
@@ -81,14 +91,6 @@ class StaffViewSet(mixins.CreateModelMixin,
 
     pagination_class = UserPagination
 
-    def send_active_email(self, email, realname):
-        # 处理 AES 加密
-        token = aes.encrypt(email)
-        active_path = reverse("staff:active") + "?" + parse.urlencode({"token": token})
-        active_url = self.request.build_absolute_uri(active_path)
-
-        # 异步发送邮件
-        send_mail_task.delay(email, realname, active_url)
 
     def create(self, request, *args, **kwargs):
         serializer = CreateStaffSerializer(data=request.data, context={'request': request})
@@ -104,7 +106,7 @@ class StaffViewSet(mixins.CreateModelMixin,
                                               department_id=department_id)
 
             # 发送邮件
-            self.send_active_email(email, user.realname)
+            send_active_email(request, email, user.realname)
 
             return Response(data={'detail': '用户创建成功'}, status=status.HTTP_201_CREATED)
         else:
@@ -184,3 +186,69 @@ class StaffDownloadView(APIView):
             return response
         except Exception as e:
             return Response(data={'detail': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+class StaffUploadView(APIView):
+    def post(self, request):
+        # 权限检查
+        if request.user.department.name != '董事会' and request.user.uid != request.user.department.leader.uid:
+            return Response({'detail': '无权进行此操作'}, status=status.HTTP_403_FORBIDDEN)
+
+        # 序列化器验证
+        serializer = StaffUploadSerializer(data=request.data)
+        if not serializer.is_valid():
+            detail = list(serializer.errors.values())[0][0]
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 读取上传的Excel文件
+        file = serializer.validated_data['file']
+        required_columns = ['所属部门', '真实姓名', '电子邮箱', '联系电话']
+
+        try:
+            staff_data = pd.read_excel(file)
+            # 检查必要列是否存在
+            if not all(col in staff_data.columns for col in required_columns):
+                missing = [col for col in required_columns if col not in staff_data.columns]
+                return Response({'detail': f"缺少必要的列: {', '.join(missing)}"}, status=status.HTTP_400_BAD_REQUEST)
+
+            users = []
+            # 遍历Excel行数据
+            for index, row in staff_data.iterrows():
+                # 获取部门并验证
+                department_name = row['所属部门']
+                department = OADepartment.objects.filter(name=department_name).first()
+                if not department:
+                    return Response({'detail': f"部门 '{department_name}' 不存在"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # 非董事会用户只能为自己部门创建员工
+                if request.user.department.name != '董事会' and department != request.user.department:
+                    return Response({'detail': f'您隶属{request.user.department.name}, 无权为其他部门创建员工, 请确认Excel表格里所属部门信息是否有误!'}, status=status.HTTP_403_FORBIDDEN)
+
+                # 检查邮箱唯一性
+                email = row['电子邮箱']
+                if OAUser.objects.filter(email=email).exists():
+                    return Response({'detail': f"电子邮箱 '{email}' 已被使用"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # 获取其他字段
+                realname = row['真实姓名']
+                telphone = row['联系电话']
+
+                # 创建用户对象
+                user = OAUser(email=email, realname=realname, department=department, telphone=telphone, status=2)
+                user.set_password('111111')
+                users.append(user)
+
+            # 使用事务批量创建用户
+            with transaction.atomic():
+                OAUser.objects.bulk_create(users)
+
+            # 发送激活邮件
+            for user in users:
+                send_active_email(request, user.email, user.realname)
+
+            count = len(users)
+            return Response({'detail': f'共{count}条员工信息创建成功!'}, status=status.HTTP_201_CREATED)
+
+        except pd.errors.EmptyDataError:
+            return Response({'detail': 'Excel文件为空'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'detail': f'发生错误: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)

@@ -2286,3 +2286,88 @@ class StaffDownloadView(APIView):
 ```
 - 配置路由, 略
 - 代码可复用, 保存
+
+### 上传员工信息
+> 创建一个被POST请求的接口, 上传写有员工信息的Excel文件, 先判断登录的用户是否有权创建, 然后进行序列化(校验数据顺便转成序列化对象), 将序列化后的对象用 pandas.read_excel函数读取并遍历写入空列表中, 写入同时判断是否有权创建, 邮箱是否重复, 最后将这个列表作为批量数据, 用OAuser模型批量创建新数据
+
+- 视图层源代码
+```python
+class StaffUploadView(APIView):
+    def post(self, request):
+        # 权限检查: 如果不是董事会的, 也不是部门的领导
+        if request.user.department.name != '董事会' and request.user.uid != request.user.department.leader.uid:
+            # 那就报错: 不允许上传
+            return Response({'detail': '无权进行此操作'}, status=status.HTTP_403_FORBIDDEN)
+
+        # 序列化器(导入./serializers.StaffUploadSerializer)验证
+        serializer = StaffUploadSerializer(data=request.data)
+        if not serializer.is_valid():
+            # 如果没通过验证, 报错
+            detail = list(serializer.errors.values())[0][0]
+            return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 读取上传的Excel文件
+        file = serializer.validated_data['file']
+        # 配置需要的列的格式
+        required_columns = ['所属部门', '真实姓名', '电子邮箱', '联系电话']
+
+        try:
+            # 使用 pandas.read_excel() 函数读取文件
+            staff_data = pd.read_excel(file)
+            # 检查必要列是否存在
+            if not all(col in staff_data.columns for col in required_columns):
+                missing = [col for col in required_columns if col not in staff_data.columns]
+                return Response({'detail': f"缺少必要的列: {', '.join(missing)}"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            # 空列表: 用于等会批量往数据库写入信息
+            users = []
+            # 遍历Excel行数据
+            for index, row in staff_data.iterrows():
+                # 获取部门并验证
+                department_name = row['所属部门']
+                department = OADepartment.objects.filter(name=department_name).first()
+                # 如果部门不存在
+                if not department:
+                    return Response({'detail': f"部门 '{department_name}' 不存在"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # 非董事会用户只能为自己部门创建员工
+                if request.user.department.name != '董事会' and department != request.user.department:
+                    return Response({'detail': f'您隶属{request.user.department.name}, 无权为其他部门创建员工, 请确认Excel表格里所属部门信息是否有误!'}, status=status.HTTP_403_FORBIDDEN)
+
+                # 检查邮箱唯一性
+                email = row['电子邮箱']
+                if OAUser.objects.filter(email=email).exists():
+                    return Response({'detail': f"电子邮箱 '{email}' 已被使用"}, status=status.HTTP_400_BAD_REQUEST)
+
+                # 获取其他字段
+                realname = row['真实姓名']
+                telphone = row['联系电话']
+
+                # 创建用户对象
+                user = OAUser(email=email, realname=realname, department=department, telphone=telphone, status=2)
+                # 配置初始密码
+                user.set_password('111111')
+                # 添加到空列表中
+                users.append(user)
+                # ... 一致循环遍历Excel所有行
+
+            # 使用事务批量创建用户
+            with transaction.atomic():
+                OAUser.objects.bulk_create(users)
+
+            # 遍历发送激活邮件
+            for user in users:
+                send_active_email(request, user.email, user.realname)
+            
+            # 计算创建的总数
+            count = len(users)
+            return Response({'detail': f'共{count}条员工信息创建成功!'}, status=status.HTTP_201_CREATED)
+        
+        # 当 pandas 读入文件为空时
+        except pd.errors.EmptyDataError:
+            return Response({'detail': 'Excel文件为空'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'detail': f'发生错误: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+```
+- 序列化器非常简单, 参考图片上传功能, 使用`FileExtensionValidator`类对上传文件进行验证即可
+- 记得配置路由

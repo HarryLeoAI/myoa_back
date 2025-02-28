@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from django.core.validators import FileExtensionValidator
 
 OAUser = get_user_model()
 class CreateStaffSerializer(serializers.Serializer):
@@ -20,3 +21,9 @@ class CreateStaffSerializer(serializers.Serializer):
             raise serializers.ValidationError('仅部门直属领导添加员工!')
 
         return attrs
+
+class StaffUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(
+        validators=[FileExtensionValidator(['xlsx', 'xls'])],
+        error_messages={'required': '请上传Excel文件！'}
+    )

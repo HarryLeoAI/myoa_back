@@ -1,4 +1,4 @@
-from rest_framework import serializers
+from rest_framework import serializers,exceptions
 from django.contrib.auth import get_user_model
 from django.core.validators import FileExtensionValidator
 
@@ -27,3 +27,33 @@ class StaffUploadSerializer(serializers.Serializer):
         validators=[FileExtensionValidator(['xlsx', 'xls'])],
         error_messages={'required': '请上传Excel文件！'}
     )
+
+class DepartmentUpdateSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField(required=True)
+    intro = serializers.CharField(required=True)
+    leader = serializers.CharField(required=True)
+    manager = serializers.CharField(allow_null=True)
+
+    def update(self, instance, validated_data):
+        request = self.context['request']
+        user = request.user
+
+        if user.is_superuser != 1:
+            raise exceptions.APIException(detail='只有老板可以修改部门信息!')
+
+        instance.name = validated_data['name']
+        instance.intro = validated_data['intro']
+
+        leader = OAUser.objects.get(uid=validated_data['leader'])
+        if leader.department.id != instance.id:
+            raise exceptions.APIException(detail='只能任命隶属本部的成员作为部门领导!如需抽调任职,请先修改员工所属部门为当前部门!')
+        else:
+            instance.leader = leader
+
+        if validated_data['manager']:
+            instance.manager = OAUser.objects.get(uid=validated_data['manager'])
+
+        instance.save()
+
+        return instance

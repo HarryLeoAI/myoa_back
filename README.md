@@ -2371,3 +2371,69 @@ class StaffUploadView(APIView):
 ```
 - 序列化器非常简单, 参考图片上传功能, 使用`FileExtensionValidator`类对上传文件进行验证即可
 - 记得配置路由
+
+### 补充: 修改部门信息
+> 课程外内容: 部门信息可以被修改, 包括名称name, 简介intro, 直属领导leader, 分管董事manager
+
+1. 新增视图接口`DepartmentUpdateView(UpdateAPIView)`, 继承自UpdateAPIView, 这个函数指定了queryset和serializer_class后, 会调取指定模型, 根据传入的主键id实例化指定对象, 再调用序列化器里的update函数
+2. 配置序列化器, 并配置update函数
+```python
+class DepartmentUpdateSerializer(serializers.Serializer):
+    # 指定字段
+    id = serializers.IntegerField()
+    name = serializers.CharField(required=True)
+    intro = serializers.CharField(required=True)
+    leader = serializers.CharField(required=True)
+    manager = serializers.CharField(allow_null=True)
+    
+    # 必须自己写update, 1是因为继承的不是ModelSerializer, 2是我还有自己的逻辑
+    def update(self, instance, validated_data):
+        # 获取请求者
+        request = self.context['request']
+        user = request.user
+        
+        # 如果请求者不是超级用户(老板)
+        if user.is_superuser != 1:
+            # 不能改
+            raise exceptions.APIException(detail='只有老板可以修改部门信息!')
+        
+        # 修改名称,简介
+        instance.name = validated_data['name']
+        instance.intro = validated_data['intro']
+        
+        # 获取leader信息
+        leader = OAUser.objects.get(uid=validated_data['leader'])
+        # 进行判断: 如果leader所属的部门, 不是当前要被修改信息的部门
+        if leader.department.id != instance.id:
+            # 那么报错
+            raise exceptions.APIException(detail='只能任命隶属本部的成员作为部门领导!如需抽调任职,请先修改员工所属部门为当前部门!')
+        else:
+            # 否则修改leader
+            instance.leader = leader
+        
+        # 如果有传入manager
+        if validated_data['manager']:
+            instance.manager = OAUser.objects.get(uid=validated_data['manager'])
+        
+        # 保存
+        instance.save()
+        
+        # return出去
+        return instance
+```
+3. 针对仅提供修改(PUT请求可访问)的接口, 需要自己配置路由
+```python
+urlpatterns = [
+    path('departmetns/<pk>/', views.DepartmentUpdateView.as_view(), name="updatedepartment")
+] + router.urls
+```
+4. 前端编辑部门时, 还需要获取员工信息
+```python
+class StaffListView(ListAPIView):
+    """
+    返回不分页的员工列表
+    """
+    queryset = OAUser.objects.order_by("date_joined").all()
+    serializer_class = UserSerializer
+```
+5. 同样需要配路由, 略

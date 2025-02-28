@@ -12,7 +12,7 @@ from django.urls import reverse
 from django.views import View
 from rest_framework import status
 from rest_framework import viewsets, mixins, exceptions
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, UpdateAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,7 +22,7 @@ from apps.oaauth.serializers import DepartmentSerializer
 from apps.oaauth.serializers import UserSerializer
 from utils import aeser
 from .paginations import UserPagination
-from .serializers import CreateStaffSerializer, StaffUploadSerializer
+from .serializers import CreateStaffSerializer, StaffUploadSerializer, DepartmentUpdateSerializer
 from .tasks import send_mail_task
 from django.db import transaction
 
@@ -252,3 +252,14 @@ class StaffUploadView(APIView):
             return Response({'detail': 'Excel文件为空'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
             return Response({'detail': f'发生错误: {str(e)}'}, status=status.HTTP_400_BAD_REQUEST)
+
+class StaffListView(ListAPIView):
+    """
+    返回不分页的员工列表
+    """
+    queryset = OAUser.objects.order_by("date_joined").all()
+    serializer_class = UserSerializer
+
+class DepartmentUpdateView(UpdateAPIView):
+    queryset = OADepartment.objects.all()
+    serializer_class = DepartmentUpdateSerializer

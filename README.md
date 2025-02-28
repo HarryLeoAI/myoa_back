@@ -2437,3 +2437,8 @@ class StaffListView(ListAPIView):
     serializer_class = UserSerializer
 ```
 5. 同样需要配路由, 略
+
+### 在开发过程中遇到的一个大坑
+> 最先开始, 想采用序列化嵌套的方式, 获取部门时直接获取其leader的信息, 结果打开`~/apps/serializer.py`才发现: 为了让用户获取其所属部门的信息, 我把部门的序列化写在前面, 而写在前面的部门序列化器, 是不能指定User序列化器作为其自身的嵌套的(除非UserSerializer写在前面),这样就导致了**循环依赖**: A依赖B, B也依赖A. 我至今没有找到方法解决!
+
+> 所以只有在部门列表页面一次性把全部的user拉出来, 在前端进行筛选, 在修改时也同样, 我需要再用 `leader = OAUser.objects.get(uid=validated_data['leader'])` 获取被选择的直属领导进行修改, 如果有manager还得再请求一次数据库, 这样非常浪费数据库资源, 还好我设置为只有老板可以修改数据.

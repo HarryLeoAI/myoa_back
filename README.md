@@ -2442,3 +2442,112 @@ class StaffListView(ListAPIView):
 > 最先开始, 想采用序列化嵌套的方式, 获取部门时直接获取其leader的信息, 结果打开`~/apps/serializer.py`才发现: 为了让用户获取其所属部门的信息, 我把部门的序列化写在前面, 而写在前面的部门序列化器, 是不能指定User序列化器作为其自身的嵌套的(除非UserSerializer写在前面),这样就导致了**循环依赖**: A依赖B, B也依赖A. 我至今没有找到方法解决!
 
 > 所以只有在部门列表页面一次性把全部的user拉出来, 在前端进行筛选, 在修改时也同样, 我需要再用 `leader = OAUser.objects.get(uid=validated_data['leader'])` 获取被选择的直属领导进行修改, 如果有manager还得再请求一次数据库, 这样非常浪费数据库资源, 还好我设置为只有老板可以修改数据.
+
+# 首页展示接口
+### 三个接口
+1. 展示最新10条通知信息, 注意数据筛选部分(.filter)
+2. 展示最新10条请假信息, 同样注意数据筛选部分(.filter)
+3. 展示部门员工和数量, 注意新增虚拟字段和展示字段部分(.annotate, .value)
+4. 使用redis进行页面缓存(settings.py里配置好后给函数加装饰器)
+- 源代码 `~apps/home/views.py`
+```python
+from rest_framework.views import APIView
+from rest_framework.response import Response
+
+# 通知
+from apps.inform.models import Inform, InformRead
+from apps.inform.serializers import InformSerializer
+
+# 考勤
+from apps.absent.models import Absent,AbsentStatusChoices
+from apps.absent.serializers import AbsentSerializer
+from django.db.models import Q,Prefetch
+
+# 部门人员总数
+from apps.oaauth.models import OADepartment
+from django.db.models import Count
+
+# 缓存用的装饰器
+from django.views.decorators.cache import cache_page
+from django.utils.decorators import method_decorator
+
+
+class LatestInformView(APIView):
+    """
+    返回最新10条通知
+    """
+    
+    # 通过 method_decorator()装饰器加载另一个装饰器cache_page(), 因为我们是类视图, 必须这样加载
+    @method_decorator(
+        # 还得注意一点: 为了区分请求用户的所属部门, 还需要指定key_prefix(键前缀)参数
+        # 这个参数的值就是一个字符串: dept_请求的用户的部门的id
+        # lambda 匿名函数格式 lambda 参数:运算结果无需return
+        # 这玩意儿也就等于 def 匿名 (req) : return "dept" + str(req.user.department.id)
+        cache_page(60 * 15, key_prefix=lambda req: f"dept_{req.user.department.id}")
+    )
+    def get(self, request):
+        
+        # 进行数据筛选
+        informs = (
+            Inform.objects
+            # 预查询
+            .prefetch_related(
+                # 预查询当前通知于当前请求用户是否已已读
+                Prefetch('been_read', queryset=InformRead.objects.filter(user_id=request.user.uid)),
+                # 预查询通知可见部门
+                'departments'
+            )
+            # 筛选
+            .filter(
+                # 要么公开
+                Q(public=True) |
+                # 要么所属部门的列表里有当前用户所属部门(即该用户所属部门可见的非公开的通知)
+                Q(departments__id=request.user.department.id)
+            )
+            # distinct去重 [:10]取最新10条
+            # 因为模型里面 ordering 配置好了规则以 create_time 倒序排序所以这里不需要再 .order_by() 了
+            .distinct()[:10]
+        )
+        
+        # 进行序列化(转json, 告诉序列化器这是多条数据而非一条 many=True)
+        serializer = InformSerializer(informs, many=True)
+        
+        # 返回drf响应, 实现接口获得请求 -> 处理好数据筛选 -> 往外抛出数据
+        return Response(serializer.data)
+
+
+class LatestAbsentView(APIView):
+    @method_decorator(
+        cache_page(60 * 15, key_prefix=lambda req: f"dept_{req.user.department.id}")
+    )
+    def get(self, request):
+        # 这次换一个写法
+        queryset = Absent.objects
+        
+        # 如果请求的用户不是董事会的
+        if request.user.department.name != '董事会':
+            # 那么该用户只能看得见
+            queryset = queryset.filter(requester__department=request.user.department).order_by('-create_time')[:10]
+        else:
+            # 获取10条待审核的请假信息
+            queryset = queryset.filter(status=AbsentStatusChoices.REVIEW).order_by('-create_time')[:10]
+        
+        # 序列化
+        serializer = AbsentSerializer(queryset, many=True)
+        
+        # 返回给前端
+        return Response(serializer.data)
+
+
+class DepartmentStaffCount(APIView):
+    @method_decorator(cache_page(60 * 15))
+    def get(self, request):
+        # 通过模型.objects.annotate(虚拟字段=值)给查询对象新增一个虚拟字段
+        # Count计算外键数量作为staff_count字段的值(department_staffs定义在OAUser模型的字段department里的related_name中)
+        # .values(字段1,字段2), 保留需要的字段
+        datas =OADepartment.objects.annotate(staff_count=Count('department_staffs')).values("name", "staff_count")
+        
+        # 直接返回
+        return Response(datas)
+```
+- 别忘了路由, 略

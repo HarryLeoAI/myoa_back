@@ -206,3 +206,13 @@ CELERY_RESULT_SERIALIZER = 'json'
 
 # 前端域名(用于激活后跨域重定向跳转)
 FRONTEND_URL = "http://localhost:5173/#"
+
+# 缓存
+CACHES = {
+    "default": {
+        # 缓存服务器类型
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        # 缓存服务器地址
+        "LOCATION": "redis://127.0.0.1:6379/3",
+    }
+}
